@@ -1,0 +1,74 @@
+# gowinproc configuration example
+# Copy this file to config.yaml and modify as needed
+
+server:
+  host: localhost
+  port: 8080
+  grpc_port: 50051
+  read_timeout: 30s
+  write_timeout: 30s
+
+# Secrets management configuration
+secrets:
+  mode: standalone  # "standalone" or "cloudflare"
+
+  # Uncomment for Cloudflare mode
+  # cloudflare:
+  #   worker_url: https://your-auth-worker.workers.dev
+  #   private_key_path: ./keys/client_private.pem
+
+# GitHub integration configuration
+github:
+  mode: standalone  # "standalone" or "cloudflare"
+
+  # Uncomment for Cloudflare mode
+  # cloudflare:
+  #   worker_url: https://your-github-webhook-worker.workers.dev
+  #   private_key_path: ./keys/client_private.pem
+
+  # Update mode configuration
+  update_mode:
+    # Polling mode (default)
+    polling:
+      enabled: true
+      interval: 5m
+
+    # Webhook mode (requires tunnel)
+    # webhook:
+    #   enabled: false
+    #   path: /webhook/github
+
+# Cloudflare Tunnel configuration (optional)
+# tunnel:
+#   enabled: false
+#   port: 8080
+#   protocol: http2  # "http2" or "quic"
+
+# Managed processes
+processes:
+  - name: example-service
+    repository: owner/repo-name
+    binary_path: ./bin/example-service.exe
+    args:
+      - --port
+      - "9000"
+    env:
+      SERVICE_NAME: example-service
+      LOG_LEVEL: info
+    work_dir: ./processes/example-service
+    port: 9000
+    health_check:
+      enabled: true
+      endpoint: http://localhost:9000/health
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    auto_restart: true
+    max_instances: 2
+
+  # Add more processes as needed
+  # - name: another-service
+  #   repository: owner/another-repo
+  #   binary_path: ./bin/another-service.exe
+  #   port: 9001
+  #   max_instances: 1

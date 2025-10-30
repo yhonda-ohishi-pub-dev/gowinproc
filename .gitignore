@@ -1,0 +1,82 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+gowinproc
+gowinproc.exe
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# Build directories
+bin/
+build/
+dist/
+
+# Dependency directories
+vendor/
+
+# Environment variables (contains secrets!)
+.env
+*.env
+processes/**/.env
+
+# Private keys (RSA authentication - generated)
+/keys/
+*.pem
+*.key
+
+# SSL/TLS certificates (generated)
+/certs/
+*.crt
+*.cer
+*.p12
+*.pfx
+
+# Logs (generated)
+/logs/
+*.log
+
+# Data files (generated)
+/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE and editor files
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Configuration (optional - may want to version control config.yaml)
+# config.yaml
+
+# Process working directories
+processes/*/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Windows specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Backup files
+*.bak
+*.backup
