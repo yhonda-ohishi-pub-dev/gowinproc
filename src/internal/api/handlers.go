@@ -6,18 +6,22 @@ import (
 	"net/http"
 
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/process"
+	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/update"
+	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/pkg/models"
 )
 
 // Server represents the REST API server
 type Server struct {
 	processManager *process.Manager
+	updateManager  *update.Manager
 	mux            *http.ServeMux
 }
 
 // NewServer creates a new API server
-func NewServer(processMgr *process.Manager) *Server {
+func NewServer(processMgr *process.Manager, updateMgr *update.Manager) *Server {
 	s := &Server{
 		processManager: processMgr,
+		updateManager:  updateMgr,
 		mux:            http.NewServeMux(),
 	}
 
@@ -185,8 +189,28 @@ func (s *Server) handleProcessUpdate(w http.ResponseWriter, r *http.Request, pro
 		return
 	}
 
-	// TODO: Implement update logic in Phase 2
-	s.writeError(w, http.StatusNotImplemented, "update feature will be implemented in Phase 2")
+	var req models.UpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// If body is empty, use defaults
+		req = models.UpdateRequest{
+			ProcessName: processName,
+			Force:       false,
+		}
+	} else {
+		req.ProcessName = processName
+	}
+
+	if err := s.updateManager.UpdateProcess(req.ProcessName, req.Version, req.Force); err != nil {
+		s.writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to start update: %v", err))
+		return
+	}
+
+	response := map[string]interface{}{
+		"message": "update started",
+		"process": processName,
+	}
+
+	s.writeJSON(w, http.StatusAccepted, response)
 }
 
 // handleProcessVersion handles GET /api/v1/processes/{name}/version
@@ -196,8 +220,24 @@ func (s *Server) handleProcessVersion(w http.ResponseWriter, r *http.Request, pr
 		return
 	}
 
-	// TODO: Implement version info in Phase 2
-	s.writeError(w, http.StatusNotImplemented, "version feature will be implemented in Phase 2")
+	// Check for update status
+	if status, exists := s.updateManager.GetUpdateStatus(processName); exists {
+		response := map[string]interface{}{
+			"process":       processName,
+			"update_status": status,
+		}
+		s.writeJSON(w, http.StatusOK, response)
+		return
+	}
+
+	// Return version info
+	// TODO: Implement full version info retrieval
+	response := map[string]interface{}{
+		"process": processName,
+		"message": "no update in progress",
+	}
+
+	s.writeJSON(w, http.StatusOK, response)
 }
 
 // handleProcessRollback handles POST /api/v1/processes/{name}/rollback
@@ -207,8 +247,27 @@ func (s *Server) handleProcessRollback(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
-	// TODO: Implement rollback logic in Phase 2
-	s.writeError(w, http.StatusNotImplemented, "rollback feature will be implemented in Phase 2")
+	var req models.RollbackRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// If body is empty, rollback to previous version
+		req = models.RollbackRequest{
+			ProcessName: processName,
+		}
+	} else {
+		req.ProcessName = processName
+	}
+
+	if err := s.updateManager.RollbackProcess(req.ProcessName, req.Version); err != nil {
+		s.writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to rollback: %v", err))
+		return
+	}
+
+	response := map[string]interface{}{
+		"message": "rollback started",
+		"process": processName,
+	}
+
+	s.writeJSON(w, http.StatusAccepted, response)
 }
 
 // handleHealth handles GET /health

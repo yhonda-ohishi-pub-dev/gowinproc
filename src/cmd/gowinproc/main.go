@@ -16,13 +16,17 @@ import (
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/config"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/process"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/secrets"
+	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/update"
+	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/version"
 )
 
 var (
-	configPath = flag.String("config", "config.yaml", "Path to configuration file")
-	certsDir   = flag.String("certs", "certs", "Directory for certificates")
-	keysDir    = flag.String("keys", "keys", "Directory for private keys")
-	dataDir    = flag.String("data", "data", "Directory for data files (.env)")
+	configPath  = flag.String("config", "config.yaml", "Path to configuration file")
+	certsDir    = flag.String("certs", "certs", "Directory for certificates")
+	keysDir     = flag.String("keys", "keys", "Directory for private keys")
+	dataDir     = flag.String("data", "data", "Directory for data files (.env)")
+	binariesDir = flag.String("binaries", "binaries", "Directory for binary versions")
+	githubToken = flag.String("github-token", "", "GitHub personal access token (or set GITHUB_TOKEN env var)")
 )
 
 func main() {
@@ -58,6 +62,26 @@ func main() {
 	}
 	log.Printf("Process manager initialized with %d processes", len(cfg.Processes))
 
+	// Get GitHub token from flag or environment
+	token := *githubToken
+	if token == "" {
+		token = os.Getenv("GITHUB_TOKEN")
+	}
+
+	// Initialize version manager
+	versionManager, err := version.NewManager(*dataDir, token)
+	if err != nil {
+		log.Fatalf("Failed to create version manager: %v", err)
+	}
+	log.Printf("Version manager initialized")
+
+	// Initialize update manager
+	updateManager, err := update.NewManager(processManager, versionManager, *binariesDir)
+	if err != nil {
+		log.Fatalf("Failed to create update manager: %v", err)
+	}
+	log.Printf("Update manager initialized (binaries: %s)", *binariesDir)
+
 	// Start configured processes
 	for _, procConfig := range cfg.Processes {
 		log.Printf("Starting process: %s", procConfig.Name)
@@ -69,7 +93,7 @@ func main() {
 	}
 
 	// Initialize REST API server
-	apiServer := api.NewServer(processManager)
+	apiServer := api.NewServer(processManager, updateManager)
 	httpServer := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
 		Handler:      apiServer,

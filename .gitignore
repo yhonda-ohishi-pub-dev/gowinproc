@@ -21,6 +21,9 @@ bin/
 build/
 dist/
 
+# Downloaded binaries (version history)
+/binaries/
+
 # Dependency directories
 vendor/
 
