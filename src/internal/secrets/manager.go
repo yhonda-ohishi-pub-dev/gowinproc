@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/joho/godotenv"
+	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/cloudflare"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/pkg/models"
 )
 
@@ -132,11 +133,23 @@ func (m *Manager) fetchCloudflareSecrets(processName string) (map[string]string,
 		return nil, fmt.Errorf("cloudflare configuration not set")
 	}
 
-	// TODO: Implement Cloudflare Workers integration using go_auth library
-	// This will be implemented in Phase 3
-	// For now, return empty map to allow standalone mode to work
+	// Create Cloudflare auth client
+	authClient, err := cloudflare.NewAuthClient(
+		m.config.Secrets.Cloudflare.WorkerURL,
+		m.config.Secrets.Cloudflare.PrivateKeyPath,
+		"gowinproc", // client ID
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create auth client: %w", err)
+	}
 
-	return make(map[string]string), nil
+	// Fetch secrets for the process
+	secrets, err := authClient.GetSecrets(processName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch secrets: %w", err)
+	}
+
+	return secrets, nil
 }
 
 // EnvFileExists checks if a .env file exists for a process

@@ -14,10 +14,13 @@ import (
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/api"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/certs"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/config"
+	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/poller"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/process"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/secrets"
+	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/tunnel"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/update"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/version"
+	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/webhook"
 )
 
 var (
@@ -92,13 +95,53 @@ func main() {
 		}
 	}
 
-	// Initialize REST API server
+	// Initialize webhook handler
+	webhookHandler := webhook.NewHandler(updateManager, "")
+
+	// Initialize REST API server with webhook routes
 	apiServer := api.NewServer(processManager, updateManager)
+	mux := http.NewServeMux()
+	mux.Handle("/api/", apiServer)
+	mux.HandleFunc("/webhook/github", webhookHandler.HandleGitHubWebhook)
+	mux.HandleFunc("/webhook/cloudflare", webhookHandler.HandleCloudflareWebhook)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"healthy"}`))
+	})
+
 	httpServer := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		Handler:      apiServer,
+		Handler:      mux,
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
+	}
+
+	// Start Cloudflare Tunnel if enabled
+	var tunnelManager *tunnel.Manager
+	if cfg.Tunnel != nil && cfg.Tunnel.Enabled {
+		tunnelManager = tunnel.NewManager(cfg.Tunnel)
+		if err := tunnelManager.Start(); err != nil {
+			log.Printf("Warning: Failed to start Cloudflare Tunnel: %v", err)
+		}
+	}
+
+	// Start GitHub version poller if configured
+	var githubPoller *poller.GitHubPoller
+	if cfg.GitHub.UpdateMode.Polling != nil && cfg.GitHub.UpdateMode.Polling.Enabled {
+		pollerProcs := make([]poller.ProcessConfig, len(cfg.Processes))
+		for i, proc := range cfg.Processes {
+			pollerProcs[i] = poller.ProcessConfig{
+				Name:       proc.Name,
+				Repository: proc.Repository,
+			}
+		}
+		githubPoller = poller.NewGitHubPoller(
+			cfg.GitHub.Cloudflare.WorkerURL,
+			cfg.GitHub.UpdateMode.Polling.Interval,
+			updateManager,
+			pollerProcs,
+		)
+		githubPoller.Start()
 	}
 
 	// Start HTTP server
@@ -115,6 +158,18 @@ func main() {
 	<-sigChan
 
 	log.Println("Shutting down gracefully...")
+
+	// Stop GitHub poller
+	if githubPoller != nil {
+		githubPoller.Stop()
+	}
+
+	// Stop Cloudflare Tunnel
+	if tunnelManager != nil {
+		if err := tunnelManager.Stop(); err != nil {
+			log.Printf("Tunnel shutdown error: %v", err)
+		}
+	}
 
 	// Shutdown HTTP server
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
