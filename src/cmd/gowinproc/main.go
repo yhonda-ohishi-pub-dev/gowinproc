@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/api"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/certs"
+	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/cloudflare"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/config"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/poller"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/process"
@@ -43,6 +45,14 @@ func main() {
 
 	log.Printf("gowinproc starting...")
 	log.Printf("Mode: Secrets=%s, GitHub=%s", cfg.Secrets.Mode, cfg.GitHub.Mode)
+
+	// Ensure RSA key pair exists for Cloudflare integration
+	privateKeyPath := filepath.Join(*keysDir, "client_private.pem")
+	publicKeyPath := filepath.Join(*keysDir, "client_public.pem")
+	if err := cloudflare.EnsureKeyPairExists(privateKeyPath, publicKeyPath, 2048); err != nil {
+		log.Fatalf("Failed to ensure RSA key pair: %v", err)
+	}
+	log.Printf("RSA key pair ready (private: %s, public: %s)", privateKeyPath, publicKeyPath)
 
 	// Initialize certificate manager
 	certManager, err := certs.NewManager(*certsDir, *keysDir)
