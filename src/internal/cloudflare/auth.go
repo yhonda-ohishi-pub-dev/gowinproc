@@ -6,17 +6,16 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
+
+	"github.com/yhonda-ohishi-pub-dev/go_auth/pkg/authclient"
 )
 
 // AuthClient handles authentication with Cloudflare Workers
-// This is a placeholder for go_auth integration
 type AuthClient struct {
-	workerURL  string
-	privateKey *rsa.PrivateKey
-	clientID   string
+	client *authclient.Client
 }
 
-// NewAuthClient creates a new Cloudflare auth client
+// NewAuthClient creates a new Cloudflare auth client using go_auth library
 func NewAuthClient(workerURL, privateKeyPath, clientID string) (*AuthClient, error) {
 	// Load private key
 	privateKey, err := loadPrivateKey(privateKeyPath)
@@ -24,25 +23,50 @@ func NewAuthClient(workerURL, privateKeyPath, clientID string) (*AuthClient, err
 		return nil, fmt.Errorf("failed to load private key: %w", err)
 	}
 
+	// Create go_auth client
+	client, err := authclient.NewClient(authclient.ClientConfig{
+		BaseURL:    workerURL,
+		ClientID:   clientID,
+		PrivateKey: privateKey,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create auth client: %w", err)
+	}
+
 	return &AuthClient{
-		workerURL:  workerURL,
-		privateKey: privateKey,
-		clientID:   clientID,
+		client: client,
 	}, nil
 }
 
 // GetSecrets fetches secrets from cloudflare-auth-worker
-// TODO: Implement full go_auth integration in Phase 3.1
 func (c *AuthClient) GetSecrets(processName string) (map[string]string, error) {
-	// Placeholder implementation
-	// In the full implementation, this would:
-	// 1. Create a challenge request
-	// 2. Sign the challenge with RSA private key
-	// 3. Send signed request to cloudflare-auth-worker
-	// 4. Receive encrypted secrets
-	// 5. Decrypt and return secrets
+	// Authenticate with Cloudflare Worker
+	result, err := c.client.Authenticate()
+	if err != nil {
+		return nil, fmt.Errorf("authentication failed: %w", err)
+	}
 
-	return nil, fmt.Errorf("go_auth integration not yet implemented - use standalone mode")
+	// Extract secret data from response
+	if !result.Success {
+		return nil, fmt.Errorf("authentication unsuccessful: %s", result.Error)
+	}
+
+	// SecretData is already map[string]string from go_auth
+	return result.SecretData, nil
+}
+
+// Health checks the health of the Cloudflare Worker
+func (c *AuthClient) Health() error {
+	resp, err := c.client.Health()
+	if err != nil {
+		return fmt.Errorf("health check failed: %w", err)
+	}
+
+	if resp.Status != "ok" {
+		return fmt.Errorf("worker unhealthy: status=%s", resp.Status)
+	}
+
+	return nil
 }
 
 // loadPrivateKey loads an RSA private key from a PEM file
