@@ -10,6 +10,9 @@ gowinproc.exe
 # Test binary
 *.test
 
+# Test files
+test_*.go
+
 # Output of the go coverage tool
 *.out
 
@@ -65,6 +68,8 @@ processes/**/.env
 
 # Configuration (optional - may want to version control config.yaml)
 # config.yaml
+config.cloudflare.yaml
+config.standalone.yaml
 
 # Process working directories
 processes/*/

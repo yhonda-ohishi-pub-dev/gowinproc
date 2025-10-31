@@ -4,10 +4,12 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // GenerateKeyPair generates RSA key pair and saves to files
@@ -64,6 +66,55 @@ func GenerateKeyPair(privateKeyPath, publicKeyPath string, bits int) error {
 	if err := pem.Encode(publicKeyFile, publicKeyPEM); err != nil {
 		return fmt.Errorf("failed to write public key: %w", err)
 	}
+
+	// Generate Cloudflare config JSON
+	if err := generateCloudflareJSON(publicKeyPath, "gowinproc"); err != nil {
+		fmt.Printf("Warning: failed to generate Cloudflare JSON: %v\n", err)
+	}
+
+	return nil
+}
+
+// generateCloudflareJSON generates JSON file for Cloudflare Workers AUTHORIZED_CLIENTS
+func generateCloudflareJSON(publicKeyPath, clientID string) error {
+	// Read public key
+	publicKeyData, err := os.ReadFile(publicKeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to read public key: %w", err)
+	}
+
+	// Keep newlines as-is - JSON marshaler will handle escaping
+	publicKeyStr := strings.TrimSpace(string(publicKeyData))
+
+	// Create JSON object in "client-id: key" format
+	config := map[string]string{
+		clientID: publicKeyStr,
+	}
+
+	// Write to .cloudflare.json file
+	jsonPath := publicKeyPath + ".cloudflare.json"
+	jsonFile, err := os.Create(jsonPath)
+	if err != nil {
+		return fmt.Errorf("failed to create JSON file: %w", err)
+	}
+	defer jsonFile.Close()
+
+	encoder := json.NewEncoder(jsonFile)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(config); err != nil {
+		return fmt.Errorf("failed to write JSON: %w", err)
+	}
+
+	fmt.Printf("\n")
+	fmt.Printf("=================================================================\n")
+	fmt.Printf("Cloudflare Workers設定用JSON (AUTHORIZED_CLIENTS配列に追加):\n")
+	fmt.Printf("=================================================================\n")
+	fmt.Printf("ファイル: %s\n\n", jsonPath)
+
+	// Also print to stdout for easy copy-paste
+	jsonBytes, _ := json.MarshalIndent(config, "", "  ")
+	fmt.Printf("%s\n", string(jsonBytes))
+	fmt.Printf("=================================================================\n\n")
 
 	return nil
 }
