@@ -1,6 +1,7 @@
 # gowinproc configuration example
 # Copy this file to config.yaml and modify as needed
 
+# Server configuration
 server:
   host: localhost
   port: 8080
@@ -28,27 +29,28 @@ github:
 
   # Update mode configuration
   update_mode:
-    # Polling mode (default)
+    # Polling mode - polls github-webhook-worker for version updates
     polling:
-      enabled: true
+      enabled: false  # Set to true for Cloudflare polling mode
       interval: 5m
 
-    # Webhook mode (requires tunnel)
+    # Webhook mode - receives updates via webhook (requires tunnel)
     # webhook:
     #   enabled: false
-    #   path: /webhook/github
+    #   path: /webhook/cloudflare
 
-# Cloudflare Tunnel configuration (optional)
+# Cloudflare Tunnel configuration (optional - for webhook reception)
+# Requires cloudflared to be installed
 # tunnel:
 #   enabled: false
-#   port: 8080
-#   protocol: http2  # "http2" or "quic"
+#   port: 8080        # Port where gowinproc is listening
+#   protocol: http2   # "http2" or "quic"
 
 # Managed processes
 processes:
   - name: example-service
-    repository: owner/repo-name
-    binary_path: ./bin/example-service.exe
+    repository: owner/repo-name  # GitHub repository for updates
+    binary_path: ./binaries/example-service/latest/example-service.exe
     args:
       - --port
       - "9000"
@@ -69,6 +71,7 @@ processes:
   # Add more processes as needed
   # - name: another-service
   #   repository: owner/another-repo
-  #   binary_path: ./bin/another-service.exe
+  #   binary_path: ./binaries/another-service/latest/another-service.exe
   #   port: 9001
+  #   auto_restart: true
   #   max_instances: 1

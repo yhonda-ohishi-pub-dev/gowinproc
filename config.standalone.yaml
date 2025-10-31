@@ -1,0 +1,51 @@
+# Standalone mode configuration
+# Simple local-only configuration without Cloudflare integration
+
+server:
+  host: localhost
+  port: 8080
+  grpc_port: 50051
+  read_timeout: 30s
+  write_timeout: 30s
+
+# Use local secrets only
+secrets:
+  mode: standalone
+
+# Use GitHub API directly (requires GITHUB_TOKEN env var)
+github:
+  mode: standalone
+  update_mode:
+    polling:
+      enabled: false
+    webhook:
+      enabled: false
+
+# No tunnel needed for standalone mode
+# tunnel:
+#   enabled: false
+
+# Managed processes
+processes:
+  - name: my-service
+    repository: your-username/your-repo
+    binary_path: ./binaries/my-service/v1.0.0/my-service.exe
+    args:
+      - --port
+      - "9000"
+    env:
+      SERVICE_NAME: my-service
+      LOG_LEVEL: info
+      # Add your environment variables here
+      # DB_HOST: localhost
+      # DB_PORT: 5432
+    work_dir: ./processes/my-service
+    port: 9000
+    health_check:
+      enabled: true
+      endpoint: http://localhost:9000/health
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    auto_restart: true
+    max_instances: 1

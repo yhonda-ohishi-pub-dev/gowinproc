@@ -177,17 +177,39 @@ processes:
 
 ### 起動
 
+**基本起動:**
 ```bash
 ./gowinproc.exe
 ```
+
+**オプション指定:**
+```bash
+./gowinproc.exe \
+  -config config.yaml \
+  -certs ./certs \
+  -keys ./keys \
+  -data ./data \
+  -binaries ./binaries \
+  -github-token YOUR_GITHUB_TOKEN
+```
+
+**利用可能なフラグ:**
+- `-config` - 設定ファイルパス（デフォルト: config.yaml）
+- `-certs` - 証明書ディレクトリ（デフォルト: certs）
+- `-keys` - 秘密鍵ディレクトリ（デフォルト: keys）
+- `-data` - データファイルディレクトリ（デフォルト: data）
+- `-binaries` - バイナリバージョンディレクトリ（デフォルト: binaries）
+- `-github-token` - GitHub Personal Access Token（または環境変数GITHUB_TOKEN）
 
 起動時に自動的に以下が実行されます：
 
 1. ディレクトリ構造の作成
 2. SSL/TLS証明書の生成（存在しない場合）
-3. cloudflare-auth-workerからSecret取得
+3. Cloudflare-auth-workerからSecret取得（Cloudflare統合モード時）
 4. `.env`ファイルの生成
 5. プロセスの起動
+6. Cloudflare Tunnelの起動（有効時）
+7. GitHubポーリングの開始（有効時）
 
 ## 自動生成される.envファイル
 
@@ -255,13 +277,54 @@ gowinproc/
 
 ### REST API
 
+**プロセス管理:**
 ```
-GET    /api/v1/processes              # プロセス一覧
-GET    /api/v1/processes/:name        # プロセス詳細
-POST   /api/v1/processes/:name/start  # 起動
-POST   /api/v1/processes/:name/stop   # 停止
-GET    /api/v1/processes/:name/metrics # メトリクス
-GET    /api/v1/health                 # ヘルスチェック
+GET    /api/v1/processes                    # プロセス一覧
+GET    /api/v1/processes/:name/status       # プロセスステータス
+POST   /api/v1/processes/:name/start        # プロセス起動
+POST   /api/v1/processes/:name/stop         # プロセス停止
+```
+
+**更新管理（Hot Deploy）:**
+```
+POST   /api/v1/processes/:name/update       # プロセス更新（最新版または指定バージョン）
+GET    /api/v1/processes/:name/version      # バージョン情報・更新ステータス取得
+POST   /api/v1/processes/:name/rollback     # 前バージョンへロールバック
+```
+
+**Webhook（Cloudflare統合時）:**
+```
+POST   /webhook/github                      # GitHub直接Webhook
+POST   /webhook/cloudflare                  # Cloudflare Workers Webhook
+```
+
+**ヘルスチェック:**
+```
+GET    /health                              # サーバーヘルスチェック
+```
+
+### 更新API使用例
+
+**最新バージョンへ更新:**
+```bash
+curl -X POST http://localhost:8080/api/v1/processes/my-service/update
+```
+
+**特定バージョンへ更新:**
+```bash
+curl -X POST http://localhost:8080/api/v1/processes/my-service/update \
+  -H "Content-Type: application/json" \
+  -d '{"version": "v1.2.3"}'
+```
+
+**更新ステータス確認:**
+```bash
+curl http://localhost:8080/api/v1/processes/my-service/version
+```
+
+**ロールバック:**
+```bash
+curl -X POST http://localhost:8080/api/v1/processes/my-service/rollback
 ```
 
 ## 関連リポジトリ
