@@ -32,6 +32,7 @@ const (
 	ProcessManager_ListAvailableUpdates_FullMethodName = "/proto.ProcessManager/ListAvailableUpdates"
 	ProcessManager_RollbackProcess_FullMethodName      = "/proto.ProcessManager/RollbackProcess"
 	ProcessManager_WatchUpdate_FullMethodName          = "/proto.ProcessManager/WatchUpdate"
+	ProcessManager_ListRepositories_FullMethodName     = "/proto.ProcessManager/ListRepositories"
 )
 
 // ProcessManagerClient is the client API for ProcessManager service.
@@ -56,6 +57,8 @@ type ProcessManagerClient interface {
 	RollbackProcess(ctx context.Context, in *RollbackRequest, opts ...grpc.CallOption) (*RollbackResponse, error)
 	// Streaming - Update Progress Monitoring
 	WatchUpdate(ctx context.Context, in *WatchUpdateRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[UpdateStatus], error)
+	// Repository Management
+	ListRepositories(ctx context.Context, in *ListRepositoriesRequest, opts ...grpc.CallOption) (*ListRepositoriesResponse, error)
 }
 
 type processManagerClient struct {
@@ -205,6 +208,16 @@ func (c *processManagerClient) WatchUpdate(ctx context.Context, in *WatchUpdateR
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ProcessManager_WatchUpdateClient = grpc.ServerStreamingClient[UpdateStatus]
 
+func (c *processManagerClient) ListRepositories(ctx context.Context, in *ListRepositoriesRequest, opts ...grpc.CallOption) (*ListRepositoriesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListRepositoriesResponse)
+	err := c.cc.Invoke(ctx, ProcessManager_ListRepositories_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProcessManagerServer is the server API for ProcessManager service.
 // All implementations must embed UnimplementedProcessManagerServer
 // for forward compatibility.
@@ -227,6 +240,8 @@ type ProcessManagerServer interface {
 	RollbackProcess(context.Context, *RollbackRequest) (*RollbackResponse, error)
 	// Streaming - Update Progress Monitoring
 	WatchUpdate(*WatchUpdateRequest, grpc.ServerStreamingServer[UpdateStatus]) error
+	// Repository Management
+	ListRepositories(context.Context, *ListRepositoriesRequest) (*ListRepositoriesResponse, error)
 	mustEmbedUnimplementedProcessManagerServer()
 }
 
@@ -275,6 +290,9 @@ func (UnimplementedProcessManagerServer) RollbackProcess(context.Context, *Rollb
 }
 func (UnimplementedProcessManagerServer) WatchUpdate(*WatchUpdateRequest, grpc.ServerStreamingServer[UpdateStatus]) error {
 	return status.Errorf(codes.Unimplemented, "method WatchUpdate not implemented")
+}
+func (UnimplementedProcessManagerServer) ListRepositories(context.Context, *ListRepositoriesRequest) (*ListRepositoriesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListRepositories not implemented")
 }
 func (UnimplementedProcessManagerServer) mustEmbedUnimplementedProcessManagerServer() {}
 func (UnimplementedProcessManagerServer) testEmbeddedByValue()                        {}
@@ -524,6 +542,24 @@ func _ProcessManager_WatchUpdate_Handler(srv interface{}, stream grpc.ServerStre
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ProcessManager_WatchUpdateServer = grpc.ServerStreamingServer[UpdateStatus]
 
+func _ProcessManager_ListRepositories_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRepositoriesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProcessManagerServer).ListRepositories(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProcessManager_ListRepositories_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProcessManagerServer).ListRepositories(ctx, req.(*ListRepositoriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ProcessManager_ServiceDesc is the grpc.ServiceDesc for ProcessManager service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -578,6 +614,10 @@ var ProcessManager_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RollbackProcess",
 			Handler:    _ProcessManager_RollbackProcess_Handler,
+		},
+		{
+			MethodName: "ListRepositories",
+			Handler:    _ProcessManager_ListRepositories_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

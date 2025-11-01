@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,7 +65,7 @@ func (m *Manager) GenerateEnvFile(processName string, certPath, keyPath string) 
 
 	// Fetch secrets from Cloudflare if configured
 	if m.config.Secrets.Mode == "cloudflare" {
-		cloudflareEnv, err := m.fetchCloudflareSecrets(processName)
+		cloudflareEnv, err := m.fetchCloudflareSecrets(processConfig)
 		if err != nil {
 			return fmt.Errorf("failed to fetch cloudflare secrets: %w", err)
 		}
@@ -128,7 +129,7 @@ func (m *Manager) GetEnvFilePath(processName string) string {
 }
 
 // fetchCloudflareSecrets fetches secrets from Cloudflare Workers
-func (m *Manager) fetchCloudflareSecrets(processName string) (map[string]string, error) {
+func (m *Manager) fetchCloudflareSecrets(processConfig *models.ProcessConfig) (map[string]string, error) {
 	if m.config.Secrets.Cloudflare == nil {
 		return nil, fmt.Errorf("cloudflare configuration not set")
 	}
@@ -143,13 +144,33 @@ func (m *Manager) fetchCloudflareSecrets(processName string) (map[string]string,
 		return nil, fmt.Errorf("failed to create auth client: %w", err)
 	}
 
-	// Fetch secrets for the process
-	secrets, err := authClient.GetSecrets(processName)
+	// Fetch all secrets from Cloudflare
+	allSecrets, err := authClient.GetSecrets(processConfig.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch secrets: %w", err)
 	}
 
-	return secrets, nil
+	log.Printf("[Secrets] Process %s fetched %d secrets from Cloudflare", processConfig.Name, len(allSecrets))
+
+	// If secrets_keys is specified, filter to only those keys
+	if len(processConfig.SecretsKeys) > 0 {
+		log.Printf("[Secrets] Process %s has %d secrets_keys specified, filtering...", processConfig.Name, len(processConfig.SecretsKeys))
+		filteredSecrets := make(map[string]string)
+		for _, key := range processConfig.SecretsKeys {
+			if value, ok := allSecrets[key]; ok {
+				filteredSecrets[key] = value
+				log.Printf("[Secrets]   - Found key: %s", key)
+			} else {
+				log.Printf("[Secrets]   - Key not found in Cloudflare: %s", key)
+			}
+		}
+		log.Printf("[Secrets] Process %s returning %d filtered secrets", processConfig.Name, len(filteredSecrets))
+		return filteredSecrets, nil
+	}
+
+	// Otherwise return all secrets
+	log.Printf("[Secrets] Process %s has no secrets_keys filter, returning all %d secrets", processConfig.Name, len(allSecrets))
+	return allSecrets, nil
 }
 
 // EnvFileExists checks if a .env file exists for a process

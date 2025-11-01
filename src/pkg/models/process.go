@@ -1,6 +1,7 @@
 package models
 
 import (
+	"bytes"
 	"os/exec"
 	"sync"
 	"time"
@@ -29,6 +30,7 @@ type ProcessInstance struct {
 	Port        int
 	Version     string
 	EnvFilePath string
+	StderrBuf   *bytes.Buffer  // Capture stderr for error logging
 	mu          sync.RWMutex
 }
 

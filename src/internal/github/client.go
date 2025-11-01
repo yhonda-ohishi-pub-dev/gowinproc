@@ -77,6 +77,11 @@ func (c *Client) GetLatestRelease(repo string) (*models.Version, error) {
 
 // GetRelease fetches a specific release by tag
 func (c *Client) GetRelease(repo, tag string) (*models.Version, error) {
+	// Special case: "latest" means get the latest release
+	if tag == "latest" {
+		return c.GetLatestRelease(repo)
+	}
+
 	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s", repo, tag)
 
 	req, err := http.NewRequest("GET", url, nil)

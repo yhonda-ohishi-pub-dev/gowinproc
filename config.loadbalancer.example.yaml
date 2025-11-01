@@ -1,0 +1,113 @@
+server:
+  host: localhost
+  port: 8080
+  grpc_port: 50051
+
+# マイクロサービスプロセス定義
+processes:
+  # User Service (複数インスタンス)
+  - name: user_service
+    repository: your-org/user-service
+    binary_path: ./binaries/user-service
+    max_instances: 3
+    auto_restart: true
+    health_check:
+      enabled: true
+      endpoint: /health
+      interval: 30s
+
+  # Auth Service (複数インスタンス)
+  - name: auth_service
+    repository: your-org/auth-service
+    binary_path: ./binaries/auth-service
+    max_instances: 2
+    auto_restart: true
+    health_check:
+      enabled: true
+      endpoint: /health
+      interval: 30s
+
+  # Order Service (複数インスタンス)
+  - name: order_service
+    repository: your-org/order-service
+    binary_path: ./binaries/order-service
+    max_instances: 4
+    auto_restart: true
+    health_check:
+      enabled: true
+      endpoint: /health
+      interval: 30s
+
+  # Payment Service (プライマリ1つ)
+  - name: payment_service
+    repository: your-org/payment-service
+    binary_path: ./binaries/payment-service
+    max_instances: 1
+    auto_restart: true
+    health_check:
+      enabled: true
+      endpoint: /health
+      interval: 30s
+
+# ロードバランサー定義
+load_balancers:
+  # API Gateway Load Balancer
+  - name: api_gateway_lb
+    listen_port: 6000
+    protocol: grpc
+    routes:
+      # User関連のメソッドはuser_serviceへラウンドロビン
+      - methods:
+          - ".*/user\\..*"
+          - ".*/User.*"
+        target_processes:
+          - user_service
+        strategy: round_robin
+
+      # Auth関連のメソッドはauth_serviceへラウンドロビン
+      - methods:
+          - ".*/auth\\..*"
+          - ".*/Auth.*"
+        target_processes:
+          - auth_service
+        strategy: round_robin
+
+      # Order関連のメソッドはorder_serviceへラウンドロビン
+      - methods:
+          - ".*/order\\..*"
+          - ".*/Order.*"
+        target_processes:
+          - order_service
+        strategy: round_robin
+
+      # Payment関連のメソッドはpayment_serviceへ（1インスタンスのみ）
+      - methods:
+          - ".*/payment\\..*"
+          - ".*/Payment.*"
+        target_processes:
+          - payment_service
+        strategy: primary
+
+  # Internal Service Mesh Load Balancer
+  - name: internal_lb
+    listen_port: 7000
+    protocol: grpc
+    routes:
+      # 全サービスへラウンドロビン（サービスメッシュ）
+      - methods:
+          - ".*"
+        target_processes:
+          - user_service
+          - auth_service
+          - order_service
+        strategy: round_robin
+
+secrets:
+  mode: standalone
+
+github:
+  mode: standalone
+  update_mode:
+    polling:
+      enabled: true
+      interval: 5m

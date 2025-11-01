@@ -135,12 +135,8 @@ func validate(cfg *models.Config) error {
 		if p.Repository == "" {
 			return fmt.Errorf("process[%d]: repository is required", i)
 		}
-		if p.BinaryPath == "" {
-			return fmt.Errorf("process[%d]: binary_path is required", i)
-		}
-		if p.Port <= 0 {
-			return fmt.Errorf("process[%d]: valid port is required", i)
-		}
+		// binary_path is now optional - will be auto-detected if not provided
+		// port is now optional - will be auto-allocated if not provided
 		if p.MaxInstances < 1 {
 			return fmt.Errorf("process[%d]: max_instances must be at least 1", i)
 		}

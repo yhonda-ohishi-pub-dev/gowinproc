@@ -1,6 +1,6 @@
 import { FC, useState, useEffect } from 'react'
-import { processApi } from '../api/client'
-import { ProcessInfo, Metrics } from '../types'
+import { grpcProcessApi } from '../api/grpc-client'
+import type * as pb from '../proto/process_manager'
 import MetricsChart from './MetricsChart'
 import InstanceList from './InstanceList'
 import '../styles/ProcessDetail.css'
@@ -10,33 +10,47 @@ interface ProcessDetailProps {
 }
 
 const ProcessDetail: FC<ProcessDetailProps> = ({ processName }) => {
-  const [processInfo, setProcessInfo] = useState<ProcessInfo | null>(null)
-  const [metrics, setMetrics] = useState<Metrics | null>(null)
+  const [processInfo, setProcessInfo] = useState<pb.ProcessInfo | null>(null)
+  const [metrics, setMetrics] = useState<pb.Metrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [targetInstances, setTargetInstances] = useState<number>(1)
+  const [isInitialized, setIsInitialized] = useState(false)
+  const [isRestarting, setIsRestarting] = useState(false)
 
   useEffect(() => {
+    // Reset initialization state when processName changes
+    setIsInitialized(false)
+    setLoading(true)
     fetchData()
-    const interval = setInterval(fetchData, 3000)
+    const interval = setInterval(() => {
+      // Continue polling even during restart to show transition state (old + new instances)
+      // Polling interval: 500ms to catch the transition state during hot restart
+      fetchData()
+    }, 500)
     return () => clearInterval(interval)
   }, [processName])
 
   const fetchData = async () => {
     try {
-      const info = await processApi.getProcess(processName)
+      const info = await grpcProcessApi.getProcess(processName)
       setProcessInfo(info)
 
       // Try to get metrics, but don't fail if not available
       try {
-        const metricsData = await processApi.getMetrics(processName)
+        const metricsData = await grpcProcessApi.getMetrics(processName)
         setMetrics(metricsData)
       } catch (metricsErr) {
         // Metrics endpoint not implemented yet, skip
         console.log('Metrics not available:', metricsErr)
       }
 
-      setTargetInstances(info.count || (info.instances?.length ?? 1))
+      // Only update targetInstances on initial load, not during polling
+      if (!isInitialized) {
+        setTargetInstances(info.instanceCount || (info.instances?.length ?? 1))
+        setIsInitialized(true)
+      }
+
       setLoading(false)
       setError(null)
     } catch (err) {
@@ -47,7 +61,7 @@ const ProcessDetail: FC<ProcessDetailProps> = ({ processName }) => {
 
   const handleStart = async () => {
     try {
-      await processApi.startProcess(processName)
+      await grpcProcessApi.startProcess(processName)
       await fetchData()
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to start process')
@@ -56,7 +70,7 @@ const ProcessDetail: FC<ProcessDetailProps> = ({ processName }) => {
 
   const handleStop = async () => {
     try {
-      await processApi.stopProcess(processName)
+      await grpcProcessApi.stopProcess(processName)
       await fetchData()
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to stop process')
@@ -64,17 +78,23 @@ const ProcessDetail: FC<ProcessDetailProps> = ({ processName }) => {
   }
 
   const handleRestart = async () => {
+    setIsRestarting(true)
     try {
-      await processApi.restartProcess(processName)
+      // Restart process (backend will perform health checks automatically)
+      await grpcProcessApi.restartProcess(processName)
       await fetchData()
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to restart process')
+    } finally {
+      setIsRestarting(false)
     }
   }
 
   const handleScale = async () => {
     try {
-      await processApi.scaleProcess(processName, targetInstances)
+      await grpcProcessApi.scaleProcess(processName, targetInstances)
+      // Allow targetInstances to be updated after scaling
+      setIsInitialized(false)
       await fetchData()
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to scale process')
@@ -96,8 +116,8 @@ const ProcessDetail: FC<ProcessDetailProps> = ({ processName }) => {
           <button onClick={handleStop} className="btn btn-danger">
             Stop
           </button>
-          <button onClick={handleRestart} className="btn btn-warning">
-            Restart
+          <button onClick={handleRestart} className="btn btn-warning" disabled={isRestarting}>
+            {isRestarting ? 'Restarting... (health check in progress)' : 'Restart'}
           </button>
         </div>
       </header>
@@ -108,11 +128,11 @@ const ProcessDetail: FC<ProcessDetailProps> = ({ processName }) => {
           <div className="config-grid">
             <div className="config-item">
               <label>Binary Path:</label>
-              <span>{processInfo.config.binary_path}</span>
+              <span>{processInfo.config.binaryPath}</span>
             </div>
             <div className="config-item">
               <label>Work Directory:</label>
-              <span>{processInfo.config.work_dir}</span>
+              <span>{processInfo.config.workDir}</span>
             </div>
             <div className="config-item">
               <label>Port:</label>
@@ -120,7 +140,7 @@ const ProcessDetail: FC<ProcessDetailProps> = ({ processName }) => {
             </div>
             <div className="config-item">
               <label>Auto Restart:</label>
-              <span>{processInfo.config.auto_restart ? 'Yes' : 'No'}</span>
+              <span>{processInfo.config.autoRestart ? 'Yes' : 'No'}</span>
             </div>
             {processInfo.config.github && (
               <div className="config-item">
@@ -140,8 +160,8 @@ const ProcessDetail: FC<ProcessDetailProps> = ({ processName }) => {
               Target Instances:
               <input
                 type="number"
-                min={processInfo.config.min_instances || 1}
-                max={processInfo.config.max_instances || 10}
+                min={processInfo.config.minInstances || 1}
+                max={processInfo.config.maxInstances || 10}
                 value={targetInstances}
                 onChange={(e) => setTargetInstances(parseInt(e.target.value))}
               />
@@ -150,7 +170,7 @@ const ProcessDetail: FC<ProcessDetailProps> = ({ processName }) => {
               Scale
             </button>
             <span className="instance-count">
-              Current: {processInfo.count || processInfo.instances?.length || 0} instances
+              Current: {processInfo.instanceCount || processInfo.instances?.length || 0} instances
             </span>
           </div>
         </section>

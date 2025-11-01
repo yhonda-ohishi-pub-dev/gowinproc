@@ -1,0 +1,82 @@
+server:
+  host: localhost
+  port: 8080
+  grpc_port: 50051
+
+# db_service プロセス定義
+processes:
+  # db_service - Local環境
+  - name: db_service_local
+    repository: yhonda-ohishi-pub-dev/db_service
+    max_instances: 3
+    auto_restart: true
+    env:
+      DB_ENV: local
+    secrets_keys:
+      - DB_HOST
+      - DB_PORT
+      - DB_USER
+      - DB_PASSWORD
+      - DB_NAME
+    health_check:
+      enabled: true
+      endpoint: /health
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # db_service - Prod環境
+  - name: db_service_prod
+    repository: yhonda-ohishi-pub-dev/db_service
+    max_instances: 3
+    auto_restart: true
+    env:
+      DB_ENV: prod
+    secrets_keys:
+      - PROD_DB_HOST
+      - PROD_DB_PORT
+      - PROD_DB_USER
+      - PROD_DB_PASSWORD
+      - PROD_DB_NAME
+    health_check:
+      enabled: true
+      endpoint: /health
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # db_service - SQL Server環境
+  - name: db_service_sqlserver
+    repository: yhonda-ohishi-pub-dev/db_service
+    port: 5021
+    max_instances: 3
+    auto_restart: true
+    env:
+      DB_ENV: sqlserver
+    secrets_keys:
+      - SQLSERVER_HOST
+      - SQLSERVER_INSTANCE
+      - SQLSERVER_USER
+      - SQLSERVER_PASSWORD
+      - SQLSERVER_DATABASE
+    health_check:
+      enabled: true
+      endpoint: /health
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+# Cloudflareから環境変数（DB接続情報）を取得
+secrets:
+  mode: cloudflare
+  override: true  # 起動時に常に.envファイルを再生成
+  cloudflare:
+    worker_url: https://ohishi-auth.mtamaramu.com
+    private_key_path: ./keys/client_private.pem
+
+github:
+  mode: cloudflare
+  update_mode:
+    polling:
+      enabled: true
+      interval: 5m

@@ -173,4 +173,11 @@ export const grpcProcessApi = {
     const response = await rpc.request(pb.ProcessManagerServiceName, 'RollbackProcess', request)
     return pb.RollbackResponse.decode(response)
   },
+
+  // リポジトリ一覧取得
+  listRepositories: async (): Promise<pb.ListRepositoriesResponse> => {
+    const request = pb.ListRepositoriesRequest.encode({}).finish()
+    const response = await rpc.request(pb.ProcessManagerServiceName, 'ListRepositories', request)
+    return pb.ListRepositoriesResponse.decode(response)
+  },
 }

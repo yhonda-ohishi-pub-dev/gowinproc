@@ -1,6 +1,6 @@
 import { FC, useState, useEffect } from 'react'
-import { processApi } from '../api/client'
-import { UpdateAvailable, VersionInfo } from '../types'
+import { grpcProcessApi } from '../api/grpc-client'
+import type * as pb from '../proto/process_manager'
 import '../styles/UpdateManager.css'
 
 interface UpdateManagerProps {
@@ -8,8 +8,8 @@ interface UpdateManagerProps {
 }
 
 const UpdateManager: FC<UpdateManagerProps> = ({ processes }) => {
-  const [updates, setUpdates] = useState<UpdateAvailable[]>([])
-  const [versions, setVersions] = useState<Map<string, VersionInfo>>(new Map())
+  const [updates, setUpdates] = useState<pb.UpdateAvailable[]>([])
+  const [versions, setVersions] = useState<Map<string, pb.VersionInfo>>(new Map())
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState<Set<string>>(new Set())
 
@@ -22,15 +22,15 @@ const UpdateManager: FC<UpdateManagerProps> = ({ processes }) => {
   const fetchUpdates = async () => {
     try {
       const [updatesData, ...versionData] = await Promise.all([
-        processApi.listAvailableUpdates(),
-        ...processes.map((p) => processApi.getVersion(p)),
+        grpcProcessApi.listAvailableUpdates(),
+        ...processes.map((p) => grpcProcessApi.getVersion(p)),
       ])
 
       setUpdates(updatesData.updates || [])
 
-      const versionMap = new Map<string, VersionInfo>()
-      versionData.forEach((v) => {
-        versionMap.set(v.process_name, v)
+      const versionMap = new Map<string, pb.VersionInfo>()
+      versionData.forEach((v: pb.VersionInfo) => {
+        versionMap.set(v.processName, v)
       })
       setVersions(versionMap)
 
@@ -44,7 +44,7 @@ const UpdateManager: FC<UpdateManagerProps> = ({ processes }) => {
   const handleUpdate = async (processName: string, version?: string) => {
     setUpdating((prev) => new Set(prev).add(processName))
     try {
-      const response = await processApi.updateProcess(processName, {
+      const response = await grpcProcessApi.updateProcess(processName, {
         version,
         strategy: 'rolling',
       })
@@ -66,8 +66,8 @@ const UpdateManager: FC<UpdateManagerProps> = ({ processes }) => {
 
     setUpdating((prev) => new Set(prev).add(processName))
     try {
-      const response = await processApi.rollback(processName)
-      alert(`Rollback completed: ${response.from_version} → ${response.to_version}`)
+      const response = await grpcProcessApi.rollback(processName)
+      alert(`Rollback completed: ${response.fromVersion} → ${response.toVersion}`)
       await fetchUpdates()
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Rollback failed')
@@ -84,7 +84,7 @@ const UpdateManager: FC<UpdateManagerProps> = ({ processes }) => {
     if (!confirm('Update all processes with available updates?')) return
 
     try {
-      const response = await processApi.updateAll({ strategy: 'rolling' })
+      const response = await grpcProcessApi.updateAll({ strategy: 'rolling' })
       alert(`Update all started: ${response.message}`)
       await fetchUpdates()
     } catch (err) {
@@ -94,7 +94,7 @@ const UpdateManager: FC<UpdateManagerProps> = ({ processes }) => {
 
   if (loading) return <div className="loading">Loading update information...</div>
 
-  const hasUpdates = updates.some((u) => !u.up_to_date)
+  const hasUpdates = updates.some((u) => !u.upToDate)
 
   return (
     <div className="update-manager">
@@ -114,17 +114,17 @@ const UpdateManager: FC<UpdateManagerProps> = ({ processes }) => {
           <p className="empty-message">No update information available</p>
         ) : (
           updates.map((update) => {
-            const version = versions.get(update.process_name)
-            const isUpdating = updating.has(update.process_name)
+            const version = versions.get(update.processName)
+            const isUpdating = updating.has(update.processName)
 
             return (
               <div
-                key={update.process_name}
-                className={`update-card ${update.up_to_date ? 'up-to-date' : 'outdated'}`}
+                key={update.processName}
+                className={`update-card ${update.upToDate ? 'up-to-date' : 'outdated'}`}
               >
                 <div className="update-header">
-                  <h3>{update.process_name}</h3>
-                  {update.up_to_date ? (
+                  <h3>{update.processName}</h3>
+                  {update.upToDate ? (
                     <span className="badge badge-success">Up to date</span>
                   ) : (
                     <span className="badge badge-warning">Update available</span>
@@ -134,12 +134,12 @@ const UpdateManager: FC<UpdateManagerProps> = ({ processes }) => {
                 <div className="version-info">
                   <div className="version-item">
                     <label>Current Version:</label>
-                    <span className="version">{update.current_version}</span>
+                    <span className="version">{update.currentVersion}</span>
                   </div>
-                  {!update.up_to_date && (
+                  {!update.upToDate && (
                     <div className="version-item">
                       <label>Latest Version:</label>
-                      <span className="version latest">{update.latest_version}</span>
+                      <span className="version latest">{update.latestVersion}</span>
                     </div>
                   )}
                 </div>
@@ -148,7 +148,7 @@ const UpdateManager: FC<UpdateManagerProps> = ({ processes }) => {
                   <div className="instance-versions">
                     <label>Instance Versions:</label>
                     <div className="instances">
-                      {version.instances.map((inst) => (
+                      {version.instances.map((inst: pb.InstanceVersion) => (
                         <span key={inst.id} className="instance-version">
                           {inst.id.substring(0, 8)}: v{inst.version}
                         </span>
@@ -157,20 +157,20 @@ const UpdateManager: FC<UpdateManagerProps> = ({ processes }) => {
                   </div>
                 )}
 
-                {!update.up_to_date && update.release_notes && (
+                {!update.upToDate && update.releaseNotes && (
                   <div className="release-notes">
                     <label>Release Notes:</label>
-                    <p>{update.release_notes}</p>
-                    {update.release_date && (
-                      <small>Released: {update.release_date}</small>
+                    <p>{update.releaseNotes}</p>
+                    {update.releaseDate && (
+                      <small>Released: {update.releaseDate}</small>
                     )}
                   </div>
                 )}
 
                 <div className="update-actions">
-                  {!update.up_to_date && (
+                  {!update.upToDate && (
                     <button
-                      onClick={() => handleUpdate(update.process_name)}
+                      onClick={() => handleUpdate(update.processName)}
                       disabled={isUpdating}
                       className="btn btn-primary"
                     >
@@ -178,7 +178,7 @@ const UpdateManager: FC<UpdateManagerProps> = ({ processes }) => {
                     </button>
                   )}
                   <button
-                    onClick={() => handleRollback(update.process_name)}
+                    onClick={() => handleRollback(update.processName)}
                     disabled={isUpdating}
                     className="btn btn-secondary"
                   >

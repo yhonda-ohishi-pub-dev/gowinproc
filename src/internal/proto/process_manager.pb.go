@@ -2025,6 +2025,94 @@ func (x *UpdateStatus) GetTimestamp() int64 {
 	return 0
 }
 
+type ListRepositoriesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRepositoriesRequest) Reset() {
+	*x = ListRepositoriesRequest{}
+	mi := &file_src_internal_proto_process_manager_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRepositoriesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRepositoriesRequest) ProtoMessage() {}
+
+func (x *ListRepositoriesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_src_internal_proto_process_manager_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRepositoriesRequest.ProtoReflect.Descriptor instead.
+func (*ListRepositoriesRequest) Descriptor() ([]byte, []int) {
+	return file_src_internal_proto_process_manager_proto_rawDescGZIP(), []int{31}
+}
+
+type ListRepositoriesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Repositories  []string               `protobuf:"bytes,1,rep,name=repositories,proto3" json:"repositories,omitempty"`
+	Count         int32                  `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRepositoriesResponse) Reset() {
+	*x = ListRepositoriesResponse{}
+	mi := &file_src_internal_proto_process_manager_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRepositoriesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRepositoriesResponse) ProtoMessage() {}
+
+func (x *ListRepositoriesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_src_internal_proto_process_manager_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRepositoriesResponse.ProtoReflect.Descriptor instead.
+func (*ListRepositoriesResponse) Descriptor() ([]byte, []int) {
+	return file_src_internal_proto_process_manager_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *ListRepositoriesResponse) GetRepositories() []string {
+	if x != nil {
+		return x.Repositories
+	}
+	return nil
+}
+
+func (x *ListRepositoriesResponse) GetCount() int32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
 type Empty struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -2033,7 +2121,7 @@ type Empty struct {
 
 func (x *Empty) Reset() {
 	*x = Empty{}
-	mi := &file_src_internal_proto_process_manager_proto_msgTypes[31]
+	mi := &file_src_internal_proto_process_manager_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2045,7 +2133,7 @@ func (x *Empty) String() string {
 func (*Empty) ProtoMessage() {}
 
 func (x *Empty) ProtoReflect() protoreflect.Message {
-	mi := &file_src_internal_proto_process_manager_proto_msgTypes[31]
+	mi := &file_src_internal_proto_process_manager_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2058,7 +2146,7 @@ func (x *Empty) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Empty.ProtoReflect.Descriptor instead.
 func (*Empty) Descriptor() ([]byte, []int) {
-	return file_src_internal_proto_process_manager_proto_rawDescGZIP(), []int{31}
+	return file_src_internal_proto_process_manager_proto_rawDescGZIP(), []int{33}
 }
 
 var File_src_internal_proto_process_manager_proto protoreflect.FileDescriptor
@@ -2221,8 +2309,12 @@ const file_src_internal_proto_process_manager_proto_rawDesc = "" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12\x1a\n" +
 	"\bprogress\x18\x04 \x01(\x05R\bprogress\x12\x18\n" +
 	"\amessage\x18\x05 \x01(\tR\amessage\x12\x1c\n" +
-	"\ttimestamp\x18\x06 \x01(\x03R\ttimestamp\"\a\n" +
-	"\x05Empty2\xee\x06\n" +
+	"\ttimestamp\x18\x06 \x01(\x03R\ttimestamp\"\x19\n" +
+	"\x17ListRepositoriesRequest\"T\n" +
+	"\x18ListRepositoriesResponse\x12\"\n" +
+	"\frepositories\x18\x01 \x03(\tR\frepositories\x12\x14\n" +
+	"\x05count\x18\x02 \x01(\x05R\x05count\"\a\n" +
+	"\x05Empty2\xc3\a\n" +
 	"\x0eProcessManager\x12J\n" +
 	"\rListProcesses\x12\x1b.proto.ListProcessesRequest\x1a\x1c.proto.ListProcessesResponse\x12:\n" +
 	"\n" +
@@ -2238,7 +2330,8 @@ const file_src_internal_proto_process_manager_proto_rawDesc = "" +
 	"\x11GetProcessVersion\x12\x18.proto.GetVersionRequest\x1a\x12.proto.VersionInfo\x12M\n" +
 	"\x14ListAvailableUpdates\x12\x19.proto.ListUpdatesRequest\x1a\x1a.proto.ListUpdatesResponse\x12B\n" +
 	"\x0fRollbackProcess\x12\x16.proto.RollbackRequest\x1a\x17.proto.RollbackResponse\x12?\n" +
-	"\vWatchUpdate\x12\x19.proto.WatchUpdateRequest\x1a\x13.proto.UpdateStatus0\x01B?Z=github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/protob\x06proto3"
+	"\vWatchUpdate\x12\x19.proto.WatchUpdateRequest\x1a\x13.proto.UpdateStatus0\x01\x12S\n" +
+	"\x10ListRepositories\x12\x1e.proto.ListRepositoriesRequest\x1a\x1f.proto.ListRepositoriesResponseB?Z=github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/protob\x06proto3"
 
 var (
 	file_src_internal_proto_process_manager_proto_rawDescOnce sync.Once
@@ -2252,40 +2345,42 @@ func file_src_internal_proto_process_manager_proto_rawDescGZIP() []byte {
 	return file_src_internal_proto_process_manager_proto_rawDescData
 }
 
-var file_src_internal_proto_process_manager_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_src_internal_proto_process_manager_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
 var file_src_internal_proto_process_manager_proto_goTypes = []any{
-	(*ListProcessesRequest)(nil),  // 0: proto.ListProcessesRequest
-	(*ListProcessesResponse)(nil), // 1: proto.ListProcessesResponse
-	(*GetProcessRequest)(nil),     // 2: proto.GetProcessRequest
-	(*ProcessInfo)(nil),           // 3: proto.ProcessInfo
-	(*ProcessInstance)(nil),       // 4: proto.ProcessInstance
-	(*ProcessConfig)(nil),         // 5: proto.ProcessConfig
-	(*GitHubConfig)(nil),          // 6: proto.GitHubConfig
-	(*SecretsConfig)(nil),         // 7: proto.SecretsConfig
-	(*CertificatesConfig)(nil),    // 8: proto.CertificatesConfig
-	(*StartProcessRequest)(nil),   // 9: proto.StartProcessRequest
-	(*StopProcessRequest)(nil),    // 10: proto.StopProcessRequest
-	(*RestartProcessRequest)(nil), // 11: proto.RestartProcessRequest
-	(*GetMetricsRequest)(nil),     // 12: proto.GetMetricsRequest
-	(*Metrics)(nil),               // 13: proto.Metrics
-	(*ProcessMetrics)(nil),        // 14: proto.ProcessMetrics
-	(*AggregatedMetrics)(nil),     // 15: proto.AggregatedMetrics
-	(*ScaleProcessRequest)(nil),   // 16: proto.ScaleProcessRequest
-	(*UpdateAllRequest)(nil),      // 17: proto.UpdateAllRequest
-	(*UpdateProcessRequest)(nil),  // 18: proto.UpdateProcessRequest
-	(*UpdateResponse)(nil),        // 19: proto.UpdateResponse
-	(*ProcessUpdateStatus)(nil),   // 20: proto.ProcessUpdateStatus
-	(*GetVersionRequest)(nil),     // 21: proto.GetVersionRequest
-	(*VersionInfo)(nil),           // 22: proto.VersionInfo
-	(*InstanceVersion)(nil),       // 23: proto.InstanceVersion
-	(*ListUpdatesRequest)(nil),    // 24: proto.ListUpdatesRequest
-	(*ListUpdatesResponse)(nil),   // 25: proto.ListUpdatesResponse
-	(*UpdateAvailable)(nil),       // 26: proto.UpdateAvailable
-	(*RollbackRequest)(nil),       // 27: proto.RollbackRequest
-	(*RollbackResponse)(nil),      // 28: proto.RollbackResponse
-	(*WatchUpdateRequest)(nil),    // 29: proto.WatchUpdateRequest
-	(*UpdateStatus)(nil),          // 30: proto.UpdateStatus
-	(*Empty)(nil),                 // 31: proto.Empty
+	(*ListProcessesRequest)(nil),     // 0: proto.ListProcessesRequest
+	(*ListProcessesResponse)(nil),    // 1: proto.ListProcessesResponse
+	(*GetProcessRequest)(nil),        // 2: proto.GetProcessRequest
+	(*ProcessInfo)(nil),              // 3: proto.ProcessInfo
+	(*ProcessInstance)(nil),          // 4: proto.ProcessInstance
+	(*ProcessConfig)(nil),            // 5: proto.ProcessConfig
+	(*GitHubConfig)(nil),             // 6: proto.GitHubConfig
+	(*SecretsConfig)(nil),            // 7: proto.SecretsConfig
+	(*CertificatesConfig)(nil),       // 8: proto.CertificatesConfig
+	(*StartProcessRequest)(nil),      // 9: proto.StartProcessRequest
+	(*StopProcessRequest)(nil),       // 10: proto.StopProcessRequest
+	(*RestartProcessRequest)(nil),    // 11: proto.RestartProcessRequest
+	(*GetMetricsRequest)(nil),        // 12: proto.GetMetricsRequest
+	(*Metrics)(nil),                  // 13: proto.Metrics
+	(*ProcessMetrics)(nil),           // 14: proto.ProcessMetrics
+	(*AggregatedMetrics)(nil),        // 15: proto.AggregatedMetrics
+	(*ScaleProcessRequest)(nil),      // 16: proto.ScaleProcessRequest
+	(*UpdateAllRequest)(nil),         // 17: proto.UpdateAllRequest
+	(*UpdateProcessRequest)(nil),     // 18: proto.UpdateProcessRequest
+	(*UpdateResponse)(nil),           // 19: proto.UpdateResponse
+	(*ProcessUpdateStatus)(nil),      // 20: proto.ProcessUpdateStatus
+	(*GetVersionRequest)(nil),        // 21: proto.GetVersionRequest
+	(*VersionInfo)(nil),              // 22: proto.VersionInfo
+	(*InstanceVersion)(nil),          // 23: proto.InstanceVersion
+	(*ListUpdatesRequest)(nil),       // 24: proto.ListUpdatesRequest
+	(*ListUpdatesResponse)(nil),      // 25: proto.ListUpdatesResponse
+	(*UpdateAvailable)(nil),          // 26: proto.UpdateAvailable
+	(*RollbackRequest)(nil),          // 27: proto.RollbackRequest
+	(*RollbackResponse)(nil),         // 28: proto.RollbackResponse
+	(*WatchUpdateRequest)(nil),       // 29: proto.WatchUpdateRequest
+	(*UpdateStatus)(nil),             // 30: proto.UpdateStatus
+	(*ListRepositoriesRequest)(nil),  // 31: proto.ListRepositoriesRequest
+	(*ListRepositoriesResponse)(nil), // 32: proto.ListRepositoriesResponse
+	(*Empty)(nil),                    // 33: proto.Empty
 }
 var file_src_internal_proto_process_manager_proto_depIdxs = []int32{
 	4,  // 0: proto.ProcessInfo.instances:type_name -> proto.ProcessInstance
@@ -2312,21 +2407,23 @@ var file_src_internal_proto_process_manager_proto_depIdxs = []int32{
 	24, // 21: proto.ProcessManager.ListAvailableUpdates:input_type -> proto.ListUpdatesRequest
 	27, // 22: proto.ProcessManager.RollbackProcess:input_type -> proto.RollbackRequest
 	29, // 23: proto.ProcessManager.WatchUpdate:input_type -> proto.WatchUpdateRequest
-	1,  // 24: proto.ProcessManager.ListProcesses:output_type -> proto.ListProcessesResponse
-	3,  // 25: proto.ProcessManager.GetProcess:output_type -> proto.ProcessInfo
-	3,  // 26: proto.ProcessManager.StartProcess:output_type -> proto.ProcessInfo
-	31, // 27: proto.ProcessManager.StopProcess:output_type -> proto.Empty
-	3,  // 28: proto.ProcessManager.RestartProcess:output_type -> proto.ProcessInfo
-	13, // 29: proto.ProcessManager.GetMetrics:output_type -> proto.Metrics
-	3,  // 30: proto.ProcessManager.ScaleProcess:output_type -> proto.ProcessInfo
-	19, // 31: proto.ProcessManager.UpdateAllProcesses:output_type -> proto.UpdateResponse
-	19, // 32: proto.ProcessManager.UpdateProcess:output_type -> proto.UpdateResponse
-	22, // 33: proto.ProcessManager.GetProcessVersion:output_type -> proto.VersionInfo
-	25, // 34: proto.ProcessManager.ListAvailableUpdates:output_type -> proto.ListUpdatesResponse
-	28, // 35: proto.ProcessManager.RollbackProcess:output_type -> proto.RollbackResponse
-	30, // 36: proto.ProcessManager.WatchUpdate:output_type -> proto.UpdateStatus
-	24, // [24:37] is the sub-list for method output_type
-	11, // [11:24] is the sub-list for method input_type
+	31, // 24: proto.ProcessManager.ListRepositories:input_type -> proto.ListRepositoriesRequest
+	1,  // 25: proto.ProcessManager.ListProcesses:output_type -> proto.ListProcessesResponse
+	3,  // 26: proto.ProcessManager.GetProcess:output_type -> proto.ProcessInfo
+	3,  // 27: proto.ProcessManager.StartProcess:output_type -> proto.ProcessInfo
+	33, // 28: proto.ProcessManager.StopProcess:output_type -> proto.Empty
+	3,  // 29: proto.ProcessManager.RestartProcess:output_type -> proto.ProcessInfo
+	13, // 30: proto.ProcessManager.GetMetrics:output_type -> proto.Metrics
+	3,  // 31: proto.ProcessManager.ScaleProcess:output_type -> proto.ProcessInfo
+	19, // 32: proto.ProcessManager.UpdateAllProcesses:output_type -> proto.UpdateResponse
+	19, // 33: proto.ProcessManager.UpdateProcess:output_type -> proto.UpdateResponse
+	22, // 34: proto.ProcessManager.GetProcessVersion:output_type -> proto.VersionInfo
+	25, // 35: proto.ProcessManager.ListAvailableUpdates:output_type -> proto.ListUpdatesResponse
+	28, // 36: proto.ProcessManager.RollbackProcess:output_type -> proto.RollbackResponse
+	30, // 37: proto.ProcessManager.WatchUpdate:output_type -> proto.UpdateStatus
+	32, // 38: proto.ProcessManager.ListRepositories:output_type -> proto.ListRepositoriesResponse
+	25, // [25:39] is the sub-list for method output_type
+	11, // [11:25] is the sub-list for method input_type
 	11, // [11:11] is the sub-list for extension type_name
 	11, // [11:11] is the sub-list for extension extendee
 	0,  // [0:11] is the sub-list for field type_name
@@ -2343,7 +2440,7 @@ func file_src_internal_proto_process_manager_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_src_internal_proto_process_manager_proto_rawDesc), len(file_src_internal_proto_process_manager_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   32,
+			NumMessages:   34,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

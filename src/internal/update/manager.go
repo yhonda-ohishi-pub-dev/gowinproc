@@ -2,6 +2,7 @@ package update
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -19,6 +20,9 @@ type Manager struct {
 	binariesDir    string
 	updates        map[string]*models.UpdateStatus
 	mu             sync.RWMutex
+	// Repository-level locks to prevent concurrent downloads of the same binary
+	repoLocks      map[string]*sync.Mutex
+	repoLocksMu    sync.Mutex
 }
 
 // NewManager creates a new update manager
@@ -32,6 +36,7 @@ func NewManager(processMgr *process.Manager, versionMgr *version.Manager, binari
 		versionManager: versionMgr,
 		binariesDir:    binariesDir,
 		updates:        make(map[string]*models.UpdateStatus),
+		repoLocks:      make(map[string]*sync.Mutex),
 	}, nil
 }
 
@@ -62,18 +67,20 @@ func (m *Manager) UpdateProcess(processName, targetVersion string, force bool) e
 
 // performUpdate performs the actual update operation
 func (m *Manager) performUpdate(processName, targetVersion string, force bool) {
+	log.Printf("[Update] Starting update for %s to version %s (force=%v)", processName, targetVersion, force)
 	status := m.getUpdateStatus(processName)
 
-	// Get process config
-	processList := m.processManager.ListProcesses()
-	var repository string
-	for _, name := range processList {
-		if name == processName {
-			// TODO: Get repository from process config
-			// For now, we'll need to pass this through the config
-			break
-		}
+	// Get repository from process manager config
+	repository := m.processManager.GetProcessRepository(processName)
+	if repository == "" {
+		log.Printf("[Update] ERROR: Failed to get repository for process %s", processName)
+		status.Stage = "failed"
+		status.Error = "Failed to get repository for process"
+		status.Completed = true
+		m.setUpdateStatus(processName, status)
+		return
 	}
+	log.Printf("[Update] Repository for %s: %s", processName, repository)
 
 	// Stage 1: Fetch version information
 	status.Stage = "fetching_version"
@@ -93,16 +100,19 @@ func (m *Manager) performUpdate(processName, targetVersion string, force bool) {
 	}
 
 	if err != nil {
+		log.Printf("[Update] ERROR: Failed to fetch version for %s: %v", processName, err)
 		status.Stage = "failed"
 		status.Error = fmt.Sprintf("Failed to fetch version: %v", err)
 		status.Completed = true
 		m.setUpdateStatus(processName, status)
 		return
 	}
+	log.Printf("[Update] Target version info for %s: %s", processName, targetVersionInfo.Tag)
 
 	// Check if already on target version
 	currentVersion, _ := m.versionManager.GetCurrentVersion(processName)
 	if currentVersion != nil && currentVersion.Tag == targetVersionInfo.Tag && !force {
+		log.Printf("[Update] %s already on target version %s, skipping", processName, targetVersionInfo.Tag)
 		status.Stage = "completed"
 		status.Message = "Already on target version"
 		status.Progress = 100
@@ -110,30 +120,50 @@ func (m *Manager) performUpdate(processName, targetVersion string, force bool) {
 		m.setUpdateStatus(processName, status)
 		return
 	}
+	log.Printf("[Update] Current version for %s: %v, target: %s", processName, currentVersion, targetVersionInfo.Tag)
 
-	// Stage 2: Download new binary
+	// Stage 2: Download new binary (with repository-level locking)
 	status.Stage = "downloading"
 	status.Message = fmt.Sprintf("Downloading version %s", targetVersionInfo.Tag)
 	status.Progress = 20
 	m.setUpdateStatus(processName, status)
 
-	binaryPath := m.getBinaryPath(processName, targetVersionInfo.Tag)
-	progressCallback := func(downloaded, total int64) {
-		if total > 0 {
-			downloadProgress := float64(downloaded) / float64(total) * 50 // 20-70%
-			status.Progress = 20 + downloadProgress
-			status.Message = fmt.Sprintf("Downloading: %.1f MB / %.1f MB",
-				float64(downloaded)/1024/1024, float64(total)/1024/1024)
-			m.setUpdateStatus(processName, status)
-		}
-	}
+	binaryPath := m.getBinaryPathForRepository(repository, targetVersionInfo.Tag)
 
-	if err := m.versionManager.DownloadVersion(targetVersionInfo, binaryPath, progressCallback); err != nil {
-		status.Stage = "failed"
-		status.Error = fmt.Sprintf("Failed to download binary: %v", err)
-		status.Completed = true
-		m.setUpdateStatus(processName, status)
-		return
+	// Acquire repository-level lock to prevent concurrent downloads
+	repoLock := m.getRepoLock(repository)
+	log.Printf("[Update] Acquiring repository lock for %s (process: %s)", repository, processName)
+	repoLock.Lock()
+
+	// Check if binary already exists (another process may have downloaded it)
+	if _, err := os.Stat(binaryPath); err == nil {
+		log.Printf("[Update] Binary already exists at %s (downloaded by another process)", binaryPath)
+		repoLock.Unlock()
+	} else {
+		// Download the binary
+		log.Printf("[Update] Starting download of %s version %s", processName, targetVersionInfo.Tag)
+		progressCallback := func(downloaded, total int64) {
+			if total > 0 {
+				downloadProgress := float64(downloaded) / float64(total) * 50 // 20-70%
+				status.Progress = 20 + downloadProgress
+				status.Message = fmt.Sprintf("Downloading: %.1f MB / %.1f MB",
+					float64(downloaded)/1024/1024, float64(total)/1024/1024)
+				m.setUpdateStatus(processName, status)
+			}
+		}
+
+		err := m.versionManager.DownloadVersion(targetVersionInfo, binaryPath, progressCallback)
+		repoLock.Unlock() // Release lock after download completes
+
+		if err != nil {
+			log.Printf("[Update] ERROR: Failed to download binary for %s: %v", processName, err)
+			status.Stage = "failed"
+			status.Error = fmt.Sprintf("Failed to download binary: %v", err)
+			status.Completed = true
+			m.setUpdateStatus(processName, status)
+			return
+		}
+		log.Printf("[Update] Download completed for %s, binary path: %s", processName, binaryPath)
 	}
 
 	// Stage 3: Start new instance (Hot Deploy)
@@ -141,46 +171,64 @@ func (m *Manager) performUpdate(processName, targetVersion string, force bool) {
 	status.Message = "Starting new instance"
 	status.Progress = 75
 	m.setUpdateStatus(processName, status)
+	log.Printf("[Update] Starting new instance for %s", processName)
 
 	// TODO: Update process config with new binary path
 	// This requires modifying the process manager to support binary path updates
 
 	newInstance, err := m.processManager.StartProcess(processName)
 	if err != nil {
+		log.Printf("[Update] ERROR: Failed to start new instance for %s: %v", processName, err)
 		status.Stage = "failed"
 		status.Error = fmt.Sprintf("Failed to start new instance: %v", err)
 		status.Completed = true
 		m.setUpdateStatus(processName, status)
 		return
 	}
+	log.Printf("[Update] New instance started for %s: ID=%s", processName, newInstance.ID)
 
 	// Wait for new instance to be healthy
+	log.Printf("[Update] Waiting 5 seconds for %s new instance to be healthy...", processName)
 	time.Sleep(5 * time.Second)
 
-	// Stage 4: Stop old instances
+	// Stage 4: Stop old instances gracefully
 	status.Stage = "stopping_old"
-	status.Message = "Stopping old instances"
+	status.Message = "Gracefully stopping old instances"
 	status.Progress = 85
 	m.setUpdateStatus(processName, status)
+	log.Printf("[Update] Gracefully stopping old instances for %s", processName)
 
 	instances, _ := m.processManager.GetProcessStatus(processName)
+	log.Printf("[Update] Found %d total instances for %s", len(instances), processName)
+	stoppedCount := 0
+	gracefulTimeout := 30 * time.Second // 30 seconds timeout for graceful shutdown
+
 	for _, inst := range instances {
+		log.Printf("[Update] Checking instance %s (status: %s, new instance: %s)", inst.ID, inst.GetStatus(), newInstance.ID)
 		if inst.ID != newInstance.ID && inst.GetStatus() == models.StatusRunning {
-			if err := m.processManager.StopProcess(processName, inst.ID); err != nil {
+			log.Printf("[Update] Gracefully stopping old instance %s for %s (timeout: %v)", inst.ID, processName, gracefulTimeout)
+
+			// Use graceful shutdown instead of immediate kill
+			if err := m.processManager.StopProcessGracefully(processName, inst.ID, gracefulTimeout); err != nil {
 				// Log error but continue
-				fmt.Printf("Warning: failed to stop old instance %s: %v\n", inst.ID, err)
+				log.Printf("[Update] Warning: failed to gracefully stop old instance %s: %v", inst.ID, err)
+			} else {
+				stoppedCount++
+				log.Printf("[Update] Successfully stopped old instance %s", inst.ID)
 			}
 		}
 	}
+	log.Printf("[Update] Stopped %d old instances for %s", stoppedCount, processName)
 
 	// Stage 5: Update version tracking
 	status.Stage = "updating_version"
 	status.Message = "Updating version information"
 	status.Progress = 95
 	m.setUpdateStatus(processName, status)
+	log.Printf("[Update] Updating version tracking for %s to %s", processName, targetVersionInfo.Tag)
 
 	if err := m.versionManager.SetCurrentVersion(processName, targetVersionInfo); err != nil {
-		fmt.Printf("Warning: failed to update version tracking: %v\n", err)
+		log.Printf("[Update] Warning: failed to update version tracking for %s: %v", processName, err)
 	}
 
 	// Complete
@@ -189,6 +237,7 @@ func (m *Manager) performUpdate(processName, targetVersion string, force bool) {
 	status.Progress = 100
 	status.Completed = true
 	m.setUpdateStatus(processName, status)
+	log.Printf("[Update] ✅ Update completed for %s: v%s", processName, targetVersionInfo.Tag)
 }
 
 // RollbackProcess rolls back a process to a previous version
@@ -250,11 +299,33 @@ func (m *Manager) getUpdateStatus(processName string) *models.UpdateStatus {
 }
 
 // getBinaryPath returns the path where a binary should be stored
+// Format: binaries/processName/processName_version.exe
 func (m *Manager) getBinaryPath(processName, version string) string {
-	return filepath.Join(m.binariesDir, processName, version, fmt.Sprintf("%s.exe", processName))
+	return filepath.Join(m.binariesDir, processName, fmt.Sprintf("%s_%s.exe", processName, version))
+}
+
+// getBinaryPathForRepository returns the path where a binary should be stored using repository name
+// Format: binaries/repositoryName/repositoryName_version.exe
+// Example: yhonda-ohishi-pub-dev/db_service -> binaries/db_service/db_service_v1.12.3.exe
+func (m *Manager) getBinaryPathForRepository(repository, version string) string {
+	// Extract repository name from full path (e.g., "yhonda-ohishi-pub-dev/db_service" -> "db_service")
+	parts := filepath.ToSlash(repository)
+	repoName := filepath.Base(parts)
+	return filepath.Join(m.binariesDir, repoName, fmt.Sprintf("%s_%s.exe", repoName, version))
 }
 
 // CheckForUpdates checks for available updates for a process
 func (m *Manager) CheckForUpdates(processName, repository string) (*models.VersionInfo, error) {
 	return m.versionManager.CheckForUpdates(processName, repository)
+}
+
+// getRepoLock gets or creates a mutex for a specific repository
+func (m *Manager) getRepoLock(repository string) *sync.Mutex {
+	m.repoLocksMu.Lock()
+	defer m.repoLocksMu.Unlock()
+
+	if _, exists := m.repoLocks[repository]; !exists {
+		m.repoLocks[repository] = &sync.Mutex{}
+	}
+	return m.repoLocks[repository]
 }

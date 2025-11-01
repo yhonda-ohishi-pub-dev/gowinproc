@@ -1,22 +1,19 @@
 import { FC } from 'react'
-import { Metrics } from '../types'
+import type * as pb from '../proto/process_manager'
 import '../styles/MetricsChart.css'
 
 interface MetricsChartProps {
-  metrics: Metrics
+  metrics: pb.Metrics
 }
 
 const MetricsChart: FC<MetricsChartProps> = ({ metrics }) => {
-  const formatBytes = (bytes: number): string => {
-    if (bytes === 0) return '0 B'
+  const formatBytes = (bytes: number | bigint): string => {
+    const numBytes = typeof bytes === 'bigint' ? Number(bytes) : bytes
+    if (numBytes === 0) return '0 B'
     const k = 1024
     const sizes = ['B', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
-  }
-
-  const formatBytesPerSec = (bytes: number): string => {
-    return formatBytes(bytes) + '/s'
+    const i = Math.floor(Math.log(numBytes) / Math.log(k))
+    return Math.round(numBytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
   }
 
   if (!metrics.aggregated) {
@@ -29,12 +26,12 @@ const MetricsChart: FC<MetricsChartProps> = ({ metrics }) => {
         <div className="metric-card">
           <div className="metric-label">Total CPU Usage</div>
           <div className="metric-value">
-            {metrics.aggregated.total_cpu_usage.toFixed(1)}%
+            {metrics.aggregated.totalCpuUsage.toFixed(1)}%
           </div>
           <div className="metric-bar">
             <div
               className="metric-bar-fill cpu"
-              style={{ width: `${Math.min(metrics.aggregated.total_cpu_usage, 100)}%` }}
+              style={{ width: `${Math.min(metrics.aggregated.totalCpuUsage, 100)}%` }}
             />
           </div>
         </div>
@@ -42,40 +39,40 @@ const MetricsChart: FC<MetricsChartProps> = ({ metrics }) => {
         <div className="metric-card">
           <div className="metric-label">Total Memory Usage</div>
           <div className="metric-value">
-            {formatBytes(metrics.aggregated.total_memory_usage)}
+            {formatBytes(metrics.aggregated.totalMemoryUsage)}
           </div>
         </div>
 
         <div className="metric-card">
           <div className="metric-label">Active Instances</div>
-          <div className="metric-value">{metrics.aggregated.instance_count}</div>
+          <div className="metric-value">{metrics.aggregated.instanceCount}</div>
         </div>
 
         <div className="metric-card">
           <div className="metric-label">Disk Read</div>
           <div className="metric-value">
-            {formatBytes(metrics.aggregated.total_disk_read)}
+            {formatBytes(metrics.aggregated.totalDiskRead)}
           </div>
         </div>
 
         <div className="metric-card">
           <div className="metric-label">Disk Write</div>
           <div className="metric-value">
-            {formatBytes(metrics.aggregated.total_disk_write)}
+            {formatBytes(metrics.aggregated.totalDiskWrite)}
           </div>
         </div>
 
         <div className="metric-card">
           <div className="metric-label">Network Received</div>
           <div className="metric-value">
-            {formatBytes(metrics.aggregated.total_network_recv)}
+            {formatBytes(metrics.aggregated.totalNetworkRecv)}
           </div>
         </div>
 
         <div className="metric-card">
           <div className="metric-label">Network Sent</div>
           <div className="metric-value">
-            {formatBytes(metrics.aggregated.total_network_sent)}
+            {formatBytes(metrics.aggregated.totalNetworkSent)}
           </div>
         </div>
       </div>
@@ -93,11 +90,11 @@ const MetricsChart: FC<MetricsChartProps> = ({ metrics }) => {
           </thead>
           <tbody>
             {metrics.instances.map((instance) => (
-              <tr key={instance.instance_id}>
-                <td>{instance.instance_id.substring(0, 8)}</td>
-                <td>{instance.cpu_usage.toFixed(1)}%</td>
-                <td>{formatBytes(instance.memory_usage)}</td>
-                <td>{Math.floor(instance.uptime / 60)}m</td>
+              <tr key={instance.instanceId}>
+                <td>{instance.instanceId.substring(0, 8)}</td>
+                <td>{instance.cpuUsage.toFixed(1)}%</td>
+                <td>{formatBytes(instance.memoryUsage)}</td>
+                <td>{Math.floor(Number(instance.uptime) / 60)}m</td>
               </tr>
             ))}
           </tbody>

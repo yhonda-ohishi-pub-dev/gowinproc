@@ -4,12 +4,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,6 +25,7 @@ import (
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/cloudflare"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/config"
 	grpcserver "github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/grpc"
+	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/loadbalancer"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/poller"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/process"
 	pb "github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/proto"
@@ -43,6 +48,24 @@ var (
 
 func main() {
 	flag.Parse()
+
+	// Setup log file
+	logFile, err := os.OpenFile("gowinproc.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalf("Failed to open log file: %v", err)
+	}
+	defer logFile.Close()
+
+	// Log to both file and console
+	multiWriter := io.MultiWriter(os.Stdout, logFile)
+	log.SetOutput(multiWriter)
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
+	// Clean up existing processes on startup
+	log.Printf("Cleaning up existing processes...")
+	if err := cleanupExistingProcesses(); err != nil {
+		log.Printf("Warning: Failed to cleanup existing processes: %v", err)
+	}
 
 	// Load configuration
 	cfg, err := config.LoadConfig(*configPath)
@@ -100,17 +123,39 @@ func main() {
 	}
 	log.Printf("Secrets manager initialized (data: %s)", *dataDir)
 
-	// Initialize process manager
-	processManager := process.NewManager(cfg, certManager, secretManager)
-	if err := processManager.Initialize(); err != nil {
-		log.Fatalf("Failed to initialize process manager: %v", err)
-	}
-	log.Printf("Process manager initialized with %d processes", len(cfg.Processes))
-
-	// Get GitHub token from flag or environment
+	// Get GitHub token from Cloudflare, flag, or environment
 	token := *githubToken
 	if token == "" {
 		token = os.Getenv("GITHUB_TOKEN")
+	}
+
+	// Try to get GITHUB_TOKEN from Cloudflare if in cloudflare mode and token is still empty
+	if token == "" && cfg.Secrets.Mode == "cloudflare" {
+		log.Printf("Fetching GITHUB_TOKEN from Cloudflare...")
+		authClient, err := cloudflare.NewAuthClient(
+			cfg.Secrets.Cloudflare.WorkerURL,
+			cfg.Secrets.Cloudflare.PrivateKeyPath,
+			"gowinproc",
+		)
+		if err == nil {
+			authResult, err := authClient.Authenticate()
+			if err == nil {
+				if githubToken, exists := authResult.SecretData["GITHUB_TOKEN"]; exists {
+					token = githubToken
+					log.Printf("GitHub token retrieved from Cloudflare")
+				} else {
+					log.Printf("Warning: GITHUB_TOKEN not found in Cloudflare secrets")
+				}
+			} else {
+				log.Printf("Warning: Failed to fetch secrets from Cloudflare: %v", err)
+			}
+		}
+	}
+
+	if token != "" {
+		log.Printf("GitHub API authentication enabled (rate limit: 5000/hour)")
+	} else {
+		log.Printf("Warning: No GitHub token configured (rate limit: 60/hour)")
 	}
 
 	// Initialize version manager
@@ -119,6 +164,14 @@ func main() {
 		log.Fatalf("Failed to create version manager: %v", err)
 	}
 	log.Printf("Version manager initialized")
+
+	// Initialize process manager
+	processManager := process.NewManager(cfg, certManager, secretManager)
+	processManager.SetVersionManager(versionManager)
+	if err := processManager.Initialize(); err != nil {
+		log.Fatalf("Failed to initialize process manager: %v", err)
+	}
+	log.Printf("Process manager initialized with %d processes", len(cfg.Processes))
 
 	// Initialize update manager
 	updateManager, err := update.NewManager(processManager, versionManager, *binariesDir)
@@ -137,10 +190,32 @@ func main() {
 		}
 	}
 
-	// Initialize gRPC server
-	grpcAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.GRPCPort)
+	// Initialize gRPC server with dynamic port if needed
+	grpcPort := cfg.Server.GRPCPort
+	grpcAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, grpcPort)
+
+	// Try to listen on the configured port, if it fails, find an available port
+	listener, err := net.Listen("tcp", grpcAddr)
+	if err != nil {
+		log.Printf("Port %d is in use, finding available port...", grpcPort)
+		// Find an available port starting from grpcPort + 1
+		for port := grpcPort + 1; port < grpcPort + 100; port++ {
+			testAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, port)
+			listener, err = net.Listen("tcp", testAddr)
+			if err == nil {
+				grpcPort = port
+				grpcAddr = testAddr
+				log.Printf("Using alternative gRPC port: %d", grpcPort)
+				break
+			}
+		}
+		if listener == nil {
+			log.Fatalf("Failed to find available gRPC port")
+		}
+	}
+
 	grpcSrv := grpc.NewServer()
-	grpcServiceServer := grpcserver.NewServer(processManager, updateManager)
+	grpcServiceServer := grpcserver.NewServer(processManager, updateManager, repositoryList)
 	pb.RegisterProcessManagerServer(grpcSrv, grpcServiceServer)
 
 	// Wrap gRPC server with gRPC-Web
@@ -157,6 +232,10 @@ func main() {
 		}),
 	)
 
+	// Setup signal channel for shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
 	// Initialize webhook handler
 	webhookHandler := webhook.NewHandler(updateManager, "")
 
@@ -169,6 +248,24 @@ func main() {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"healthy"}`))
+	})
+
+	// Graceful shutdown endpoint (for replacing running instances)
+	mux.HandleFunc("/shutdown", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		log.Println("Received graceful shutdown request via HTTP")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"shutting down"}`))
+
+		// Trigger shutdown asynchronously
+		go func() {
+			time.Sleep(500 * time.Millisecond) // Allow response to be sent
+			sigChan <- syscall.SIGTERM
+		}()
 	})
 
 	// Create HTTP server with gRPC-Web support
@@ -192,6 +289,14 @@ func main() {
 
 			// Check if this is a gRPC-Web request
 			if wrappedGrpc.IsGrpcWebRequest(r) {
+				// Handle client disconnection gracefully without logging errors
+				// This is normal behavior during hot reloads and page refreshes
+				defer func() {
+					if r := recover(); r != nil {
+						// Suppress panic from client disconnection
+						log.Printf("Debug: gRPC-Web request recovered from panic (client likely disconnected): %v", r)
+					}
+				}()
 				wrappedGrpc.ServeHTTP(w, r)
 				return
 			}
@@ -200,6 +305,23 @@ func main() {
 		}),
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
+		// Don't close idle connections too quickly - allow for hot reloads
+		IdleTimeout: 120 * time.Second,
+		// Disable HTTP/2 connection management that can cause issues with gRPC-Web
+		MaxHeaderBytes: 1 << 20,
+	}
+
+	// Initialize and start load balancers if configured
+	var lbManager *loadbalancer.Manager
+	if len(cfg.LoadBalancers) > 0 {
+		lbManager, err = loadbalancer.NewManager(cfg.LoadBalancers, processManager)
+		if err != nil {
+			log.Fatalf("Failed to create load balancer manager: %v", err)
+		}
+		if err := lbManager.Start(); err != nil {
+			log.Fatalf("Failed to start load balancers: %v", err)
+		}
+		log.Printf("Load balancers initialized and started")
 	}
 
 	// Start Cloudflare Tunnel if enabled
@@ -214,29 +336,14 @@ func main() {
 	// Start GitHub version poller if configured
 	var githubPoller *poller.GitHubPoller
 	if cfg.GitHub.UpdateMode.Polling != nil && cfg.GitHub.UpdateMode.Polling.Enabled {
-		// Use repository list from Cloudflare if available, otherwise use config processes
-		var pollerProcs []poller.ProcessConfig
-		if len(repositoryList) > 0 {
-			// Use Cloudflare repository list
-			log.Printf("Using %d repositories from Cloudflare for polling", len(repositoryList))
-			pollerProcs = make([]poller.ProcessConfig, len(repositoryList))
-			for i, repo := range repositoryList {
-				// Extract repository name for process name (e.g., "owner/repo" -> "repo")
-				// For now, use the full repository path as the name
-				pollerProcs[i] = poller.ProcessConfig{
-					Name:       repo,
-					Repository: repo,
-				}
-			}
-		} else {
-			// Fall back to config file processes
-			log.Printf("Using %d processes from config file for polling", len(cfg.Processes))
-			pollerProcs = make([]poller.ProcessConfig, len(cfg.Processes))
-			for i, proc := range cfg.Processes {
-				pollerProcs[i] = poller.ProcessConfig{
-					Name:       proc.Name,
-					Repository: proc.Repository,
-				}
+		// Always use config file processes (not Cloudflare repository list)
+		// Config processes have proper process names that match running instances
+		log.Printf("Using %d processes from config file for polling", len(cfg.Processes))
+		pollerProcs := make([]poller.ProcessConfig, len(cfg.Processes))
+		for i, proc := range cfg.Processes {
+			pollerProcs[i] = poller.ProcessConfig{
+				Name:       proc.Name,
+				Repository: proc.Repository,
 			}
 		}
 
@@ -250,11 +357,6 @@ func main() {
 	}
 
 	// Start gRPC server (native, non-Web)
-	listener, err := net.Listen("tcp", grpcAddr)
-	if err != nil {
-		log.Fatalf("Failed to listen on %s: %v", grpcAddr, err)
-	}
-
 	go func() {
 		log.Printf("gRPC server listening on %s", grpcAddr)
 		if err := grpcSrv.Serve(listener); err != nil {
@@ -272,8 +374,6 @@ func main() {
 
 	// Start system tray icon
 	log.Println("Starting system tray icon...")
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	restAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	trayManager := systray.NewManager(restAddr, grpcAddr, func() {
@@ -289,6 +389,13 @@ func main() {
 
 	// Stop system tray
 	trayManager.Stop()
+
+	// Stop load balancers
+	if lbManager != nil {
+		if err := lbManager.Stop(); err != nil {
+			log.Printf("Load balancer shutdown error: %v", err)
+		}
+	}
 
 	// Stop GitHub poller
 	if githubPoller != nil {
@@ -320,4 +427,63 @@ func main() {
 	}
 
 	log.Println("Shutdown complete")
+}
+
+// cleanupExistingProcesses kills any existing gowinproc and db_service processes
+func cleanupExistingProcesses() error {
+	// Get current process PID to avoid killing ourselves
+	currentPID := os.Getpid()
+
+	// Process names to kill
+	processNames := []string{"gowinproc.exe", "gowinproc-gui.exe", "db_service.exe"}
+
+	for _, procName := range processNames {
+		// Use tasklist to find processes
+		cmd := fmt.Sprintf("tasklist /FI \"IMAGENAME eq %s\" /FO CSV /NH", procName)
+		output, err := exec.Command("cmd", "/C", cmd).Output()
+		if err != nil {
+			continue
+		}
+
+		// Parse output and kill processes
+		lines := strings.Split(string(output), "\n")
+		for _, line := range lines {
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+
+			// CSV format: "ImageName","PID","SessionName","SessionNumber","MemUsage"
+			parts := strings.Split(line, ",")
+			if len(parts) < 2 {
+				continue
+			}
+
+			// Extract PID (remove quotes)
+			pidStr := strings.Trim(parts[1], "\"")
+			pid, err := strconv.Atoi(pidStr)
+			if err != nil {
+				continue
+			}
+
+			// Skip current process
+			if pid == currentPID {
+				log.Printf("Skipping current process: %s (PID %d)", procName, pid)
+				continue
+			}
+
+			// Kill the process
+			log.Printf("Killing existing process: %s (PID %d)", procName, pid)
+			killCmd := exec.Command("taskkill", "/F", "/PID", strconv.Itoa(pid))
+			if err := killCmd.Run(); err != nil {
+				log.Printf("Warning: Failed to kill %s (PID %d): %v", procName, pid, err)
+			} else {
+				log.Printf("Successfully killed %s (PID %d)", procName, pid)
+			}
+		}
+	}
+
+	// Wait a moment for processes to terminate
+	time.Sleep(1 * time.Second)
+
+	return nil
 }

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import ProcessList from './components/ProcessList'
 import ProcessDetail from './components/ProcessDetail'
 import UpdateManager from './components/UpdateManager'
+import RepositoryList from './components/RepositoryList'
 import { ProcessInfo } from './types'
 import { grpcProcessApi } from './api/grpc-client'
 import './styles/App.css'
@@ -11,12 +12,14 @@ interface ServerStatus {
   processes: number
   total_instances: number
   running_instances: number
+  total_cpu?: number
+  total_memory?: number
 }
 
 function App() {
   const [processes, setProcesses] = useState<string[]>([])
   const [selectedProcess, setSelectedProcess] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'processes' | 'updates'>('processes')
+  const [activeTab, setActiveTab] = useState<'processes' | 'updates' | 'repositories'>('processes')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null)
@@ -35,7 +38,7 @@ function App() {
   const fetchProcesses = async () => {
     try {
       const data = await grpcProcessApi.listProcesses()
-      const sortedProcesses = (data.process_names || []).sort((a: string, b: string) =>
+      const sortedProcesses = (data.processNames || []).sort((a: string, b: string) =>
         a.localeCompare(b)
       )
       setProcesses(sortedProcesses)
@@ -52,12 +55,22 @@ function App() {
       const data = await grpcProcessApi.listProcesses()
       let totalInstances = 0
       let runningInstances = 0
+      let totalCpu = 0
+      let totalMemory = 0
 
-      for (const processName of data.process_names || []) {
+      for (const processName of data.processNames || []) {
         try {
           const processInfo = await grpcProcessApi.getProcess(processName)
           totalInstances += processInfo.instances?.length || 0
           runningInstances += processInfo.instances?.filter(i => i.status === 'running').length || 0
+
+          // Aggregate CPU and memory from all instances
+          for (const instance of processInfo.instances || []) {
+            if (instance.metrics) {
+              totalCpu += instance.metrics.cpuUsage || 0
+              totalMemory += Number(instance.metrics.memoryUsage || 0)
+            }
+          }
         } catch (err) {
           console.error(`Failed to get process ${processName}:`, err)
         }
@@ -65,9 +78,11 @@ function App() {
 
       setServerStatus({
         status: 'running',
-        processes: data.count || data.process_names?.length || 0,
+        processes: data.count || data.processNames?.length || 0,
         total_instances: totalInstances,
         running_instances: runningInstances,
+        total_cpu: totalCpu,
+        total_memory: totalMemory,
       })
     } catch (err) {
       console.error('Failed to fetch server status:', err)
@@ -86,6 +101,12 @@ function App() {
               </span>
               <span className="status-text">
                 {serverStatus.processes} Processes | {serverStatus.running_instances}/{serverStatus.total_instances} Running
+                {serverStatus.total_cpu !== undefined && (
+                  <> | CPU: {serverStatus.total_cpu.toFixed(1)}%</>
+                )}
+                {serverStatus.total_memory !== undefined && (
+                  <> | Memory: {(serverStatus.total_memory / 1024 / 1024).toFixed(0)} MB</>
+                )}
               </span>
             </div>
           )}
@@ -102,6 +123,12 @@ function App() {
             onClick={() => setActiveTab('updates')}
           >
             Updates
+          </button>
+          <button
+            className={activeTab === 'repositories' ? 'active' : ''}
+            onClick={() => setActiveTab('repositories')}
+          >
+            Repositories
           </button>
         </nav>
       </header>
@@ -132,8 +159,10 @@ function App() {
                   )}
                 </section>
               </div>
-            ) : (
+            ) : activeTab === 'updates' ? (
               <UpdateManager processes={processes} />
+            ) : (
+              <RepositoryList />
             )}
           </div>
         )}

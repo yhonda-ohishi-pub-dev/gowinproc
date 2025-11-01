@@ -28,7 +28,7 @@ github:
 # Managed processes
 processes:
   - name: my-service
-    repository: your-username/your-repo
+    # repository: your-username/your-repo  # Commented out to skip GitHub checks
     binary_path: ./binaries/my-service/v1.0.0/my-service.exe
     args:
       - --port

@@ -1,10 +1,10 @@
 import { FC } from 'react'
-import { ProcessInstance } from '../types'
-import { processApi } from '../api/client'
+import type * as pb from '../proto/process_manager'
+import { grpcProcessApi } from '../api/grpc-client'
 import '../styles/InstanceList.css'
 
 interface InstanceListProps {
-  instances: ProcessInstance[]
+  instances: pb.ProcessInstance[]
   processName: string
   onRefresh: () => void
 }
@@ -16,7 +16,7 @@ const InstanceList: FC<InstanceListProps> = ({
 }) => {
   const handleStopInstance = async (instanceId: string) => {
     try {
-      await processApi.stopProcess(processName, instanceId)
+      await grpcProcessApi.stopProcess(processName, instanceId)
       onRefresh()
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to stop instance')
@@ -25,7 +25,7 @@ const InstanceList: FC<InstanceListProps> = ({
 
   const handleRestartInstance = async (instanceId: string) => {
     try {
-      await processApi.restartProcess(processName, instanceId)
+      await grpcProcessApi.restartProcess(processName, instanceId)
       onRefresh()
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to restart instance')
@@ -77,15 +77,15 @@ const InstanceList: FC<InstanceListProps> = ({
                   </span>
                 </td>
                 <td>{instance.port}</td>
-                <td>{formatUptime(instance.start_time)}</td>
+                <td>{formatUptime(instance.startTime)}</td>
                 <td>
                   {instance.metrics
-                    ? `${instance.metrics.cpu_usage.toFixed(1)}%`
+                    ? `${instance.metrics.cpuUsage.toFixed(1)}%`
                     : 'N/A'}
                 </td>
                 <td>
                   {instance.metrics
-                    ? formatBytes(instance.metrics.memory_usage)
+                    ? formatBytes(Number(instance.metrics.memoryUsage))
                     : 'N/A'}
                 </td>
                 <td className="actions-cell">

@@ -144,17 +144,46 @@ func (p *GitHubPoller) pollProcess(proc ProcessConfig) error {
 
 // checkAndUpdate checks if an update is needed and triggers it
 func (p *GitHubPoller) checkAndUpdate(processName, latestVersion string) error {
-	// Check for available updates
-	// TODO: Get current version and compare
-	// For now, we'll just check if an update is already in progress
-
+	// Check if an update is already in progress
 	if status, exists := p.updateManager.GetUpdateStatus(processName); exists && !status.Completed {
 		// Update already in progress
 		return nil
 	}
 
-	// TODO: Compare versions and trigger update if needed
-	// This requires integrating with version manager to get current version
+	// Find repository for this process
+	var repository string
+	for _, proc := range p.processes {
+		if proc.Name == processName {
+			repository = proc.Repository
+			break
+		}
+	}
+	if repository == "" {
+		return fmt.Errorf("repository not found for process %s", processName)
+	}
+
+	// Check for available updates through update manager
+	versionInfo, err := p.updateManager.CheckForUpdates(processName, repository)
+	if err != nil {
+		return fmt.Errorf("failed to check for updates: %w", err)
+	}
+
+	// If update is available, trigger automatic update
+	if versionInfo != nil && versionInfo.UpdateAvailable {
+		log.Printf("Update available for %s: %s -> %s, triggering auto-update",
+			processName,
+			versionInfo.CurrentVersion.Tag,
+			versionInfo.LatestVersion.Tag)
+
+		// Trigger update with latest version
+		if err := p.updateManager.UpdateProcess(processName, versionInfo.LatestVersion.Tag, false); err != nil {
+			return fmt.Errorf("failed to trigger update: %w", err)
+		}
+
+		log.Printf("Auto-update triggered for %s to version %s", processName, versionInfo.LatestVersion.Tag)
+	} else if versionInfo != nil && versionInfo.CurrentVersion != nil {
+		log.Printf("Process %s is up-to-date at version %s", processName, versionInfo.CurrentVersion.Tag)
+	}
 
 	return nil
 }

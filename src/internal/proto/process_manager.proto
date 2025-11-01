@@ -24,6 +24,9 @@ service ProcessManager {
 
   // Streaming - Update Progress Monitoring
   rpc WatchUpdate(WatchUpdateRequest) returns (stream UpdateStatus);
+
+  // Repository Management
+  rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
 }
 
 // Process Management Messages
@@ -236,6 +239,17 @@ message UpdateStatus {
   int32 progress = 4;  // 0-100
   string message = 5;
   int64 timestamp = 6;  // Unix timestamp
+}
+
+// Repository Management Messages
+
+message ListRepositoriesRequest {
+  // Empty request
+}
+
+message ListRepositoriesResponse {
+  repeated string repositories = 1;
+  int32 count = 2;
 }
 
 // Common Messages
