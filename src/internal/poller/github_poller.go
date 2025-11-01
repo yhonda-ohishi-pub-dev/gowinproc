@@ -12,12 +12,12 @@ import (
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/update"
 )
 
-// GitHubPoller polls github-webhook-worker for version updates
+// GitHubPoller polls GitHub API for version updates
 type GitHubPoller struct {
-	workerURL     string
 	interval      time.Duration
 	updateManager *update.Manager
 	processes     []ProcessConfig
+	httpClient    *http.Client
 	ctx           context.Context
 	cancel        context.CancelFunc
 	wg            sync.WaitGroup
@@ -29,24 +29,26 @@ type ProcessConfig struct {
 	Repository string
 }
 
-// VersionResponse represents the response from github-webhook-worker
-type VersionResponse struct {
-	Repository string `json:"repository"`
-	Version    string `json:"version"`
-	UpdatedAt  string `json:"updated_at"`
+// GitHubRelease represents a GitHub release API response
+type GitHubRelease struct {
+	TagName     string `json:"tag_name"`
+	Name        string `json:"name"`
+	PublishedAt string `json:"published_at"`
 }
 
 // NewGitHubPoller creates a new GitHub version poller
-func NewGitHubPoller(workerURL string, interval time.Duration, updateMgr *update.Manager, processes []ProcessConfig) *GitHubPoller {
+func NewGitHubPoller(interval time.Duration, updateMgr *update.Manager, processes []ProcessConfig) *GitHubPoller {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &GitHubPoller{
-		workerURL:     workerURL,
 		interval:      interval,
 		updateManager: updateMgr,
 		processes:     processes,
-		ctx:           ctx,
-		cancel:        cancel,
+		httpClient: &http.Client{
+			Timeout: 10 * time.Second,
+		},
+		ctx:    ctx,
+		cancel: cancel,
 	}
 }
 
@@ -97,32 +99,43 @@ func (p *GitHubPoller) pollAll() {
 
 // pollProcess polls version information for a single process
 func (p *GitHubPoller) pollProcess(proc ProcessConfig) error {
-	// Fetch version from github-webhook-worker
-	url := fmt.Sprintf("%s/version/%s", p.workerURL, proc.Repository)
+	// Fetch latest release from GitHub API
+	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", proc.Repository)
 
 	req, err := http.NewRequestWithContext(p.ctx, "GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	// Set GitHub API headers
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "gowinproc")
+
+	resp, err := p.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to fetch version: %w", err)
+		return fmt.Errorf("failed to fetch release: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		// No releases published yet
+		log.Printf("No releases found for %s (repository may not have any releases yet)", proc.Repository)
+		return nil
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	var versionResp VersionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&versionResp); err != nil {
+	var release GitHubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	log.Printf("Found release for %s: %s", proc.Repository, release.TagName)
+
 	// Check if update is needed
-	if err := p.checkAndUpdate(proc.Name, versionResp.Version); err != nil {
+	if err := p.checkAndUpdate(proc.Name, release.TagName); err != nil {
 		return fmt.Errorf("failed to check/update: %w", err)
 	}
 

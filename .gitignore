@@ -88,3 +88,11 @@ $RECYCLE.BIN/
 # Backup files
 *.bak
 *.backup
+
+# Frontend (Node.js / React)
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+frontend/src/proto/
+frontend/proto/

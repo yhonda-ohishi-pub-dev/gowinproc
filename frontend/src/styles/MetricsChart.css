@@ -1,0 +1,90 @@
+.metrics-chart {
+  width: 100%;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.metric-card {
+  background-color: var(--bg-tertiary);
+  padding: 1.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border-color);
+}
+
+.metric-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.metric-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.metric-bar {
+  height: 8px;
+  background-color: var(--bg-color);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.metric-bar-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+  border-radius: 4px;
+}
+
+.metric-bar-fill.cpu {
+  background: linear-gradient(90deg, var(--success-color), var(--warning-color), var(--danger-color));
+}
+
+.instance-metrics {
+  margin-top: 2rem;
+}
+
+.instance-metrics h4 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: var(--text-primary);
+}
+
+.instance-metrics table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.instance-metrics th {
+  text-align: left;
+  padding: 0.75rem;
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.875rem;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.instance-metrics td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.instance-metrics tbody tr:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.no-metrics {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-secondary);
+}

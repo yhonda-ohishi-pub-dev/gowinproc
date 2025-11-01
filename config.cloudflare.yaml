@@ -8,19 +8,18 @@ server:
   read_timeout: 30s
   write_timeout: 30s
 
-# Use Cloudflare Workers for secret management
+# Use Cloudflare Auth Worker for both secret and version management
+# Repository list is automatically retrieved via Service Binding from GitHub Webhook Worker
 secrets:
   mode: cloudflare
   cloudflare:
-    worker_url: https://your-auth-worker.YOUR_SUBDOMAIN.workers.dev
+    worker_url: https://ohishi-auth.mtamaramu.com
     private_key_path: ./keys/client_private.pem
 
-# Use github-webhook-worker for version management
+# GitHub version management uses the same Auth Worker
+# (worker_url inherited from secrets config above)
 github:
   mode: cloudflare
-  cloudflare:
-    worker_url: https://your-github-webhook-worker.YOUR_SUBDOMAIN.workers.dev
-    private_key_path: ./keys/client_private.pem
 
   # Choose update mode: polling or webhook
   update_mode:

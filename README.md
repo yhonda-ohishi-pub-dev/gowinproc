@@ -16,6 +16,8 @@ gowinprocは、WindowsでgRPC実行ファイルを管理するプロセスマネ
 - **リソース監視**: CPU、メモリ、ディスクI/O、ネットワーク
 - **自動スケーリング**: リソース使用率に基づくプロセスの動的増減
 - **REST/gRPC API**: プロセス制御とメトリクス取得
+- **Webダッシュボード**: React製の管理画面（プロセス監視・制御・更新管理）
+- **システムトレイ統合**: Windows通知領域からの簡単操作
 - **Cloudflare統合（オプション）**:
   - [cloudflare-auth-worker](https://github.com/yhonda-ohishi-pub-dev/cloudflare-auth-worker) によるSecret管理
   - [github-webhook-worker](https://github.com/yhonda-ohishi-pub-dev/github-webhook-worker) によるバージョン管理
@@ -326,6 +328,80 @@ curl http://localhost:8080/api/v1/processes/my-service/version
 ```bash
 curl -X POST http://localhost:8080/api/v1/processes/my-service/rollback
 ```
+
+### gRPC API
+
+完全なgRPC APIも提供しています（デフォルトポート: 9090）
+
+詳細は [DESIGN.md](DESIGN.md#grpc-service) を参照してください。
+
+## 💻 Webダッシュボード
+
+React製の管理画面で、ブラウザから直感的にプロセスを管理できます。
+
+### 主な機能
+
+- **リアルタイムプロセス監視**: 起動中のプロセスとインスタンスを一覧表示（5秒ごと自動更新）
+- **プロセス制御**: 起動・停止・再起動・スケーリング操作
+- **メトリクス可視化**: CPU/メモリ使用率のグラフ表示（Recharts）
+- **更新管理**: バージョン確認・更新・ロールバック
+- **レスポンシブデザイン**: デスクトップ・タブレット対応
+
+### セットアップ
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+ブラウザで http://localhost:3000 を開きます。
+
+### プロダクションビルド
+
+```bash
+cd frontend
+npm run build
+```
+
+生成された `dist/` ディレクトリをWebサーバーで配信します。
+
+### 画面構成
+
+- **Processes タブ**: プロセス一覧と詳細画面
+  - 左サイドバー: プロセス一覧
+  - メイン画面: 選択したプロセスの詳細・インスタンス一覧・メトリクス
+- **Updates タブ**: 全プロセスの更新管理
+  - 現在のバージョンと最新バージョンの比較
+  - 個別更新・一括更新・ロールバック操作
+
+詳細は [frontend/README.md](frontend/README.md) を参照してください。
+
+## 🔔 システムトレイアイコン
+
+Windows通知領域に常駐し、簡単にgowinprocを操作できます。
+
+### 機能
+
+- **ステータス表示**: サーバーの動作状態を一目で確認（緑色アイコン）
+- **サーバー情報**:
+  - REST APIアドレス (例: localhost:8080)
+  - gRPC APIアドレス (例: localhost:9090)
+- **クイックアクション**:
+  - **Open Dashboard**: Webダッシュボードをデフォルトブラウザで開く
+  - **View Logs**: ログディレクトリをエクスプローラーで開く
+  - **Quit**: 全プロセスを安全にシャットダウン
+
+### 使い方
+
+1. gowinprocを起動すると、自動的にシステムトレイにアイコンが表示されます
+2. アイコンを右クリックでメニューを表示
+3. メニュー項目を選択して操作
+
+### 実装詳細
+
+- ライブラリ: [github.com/getlantern/systray](https://github.com/getlantern/systray)
+- ソースコード: [src/internal/systray/systray.go](src/internal/systray/systray.go)
 
 ## 関連リポジトリ
 

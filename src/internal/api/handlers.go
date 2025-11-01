@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/process"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/update"
@@ -40,6 +41,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/v1/processes", s.handleListProcesses)
 	s.mux.HandleFunc("/api/v1/processes/", s.handleProcessRoute)
 
+	// Server status
+	s.mux.HandleFunc("/api/v1/status", s.handleServerStatus)
+
 	// Health check
 	s.mux.HandleFunc("/health", s.handleHealth)
 }
@@ -73,8 +77,12 @@ func (s *Server) handleProcessRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse path segments
-	var processName, action string
-	fmt.Sscanf(path, "%s/%s", &processName, &action)
+	parts := strings.SplitN(path, "/", 2)
+	processName := parts[0]
+	action := ""
+	if len(parts) > 1 {
+		action = parts[1]
+	}
 
 	if processName == "" {
 		s.writeError(w, http.StatusBadRequest, "process name is required")
@@ -268,6 +276,40 @@ func (s *Server) handleProcessRollback(w http.ResponseWriter, r *http.Request, p
 	}
 
 	s.writeJSON(w, http.StatusAccepted, response)
+}
+
+// handleServerStatus handles GET /api/v1/status
+func (s *Server) handleServerStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	processes := s.processManager.ListProcesses()
+	totalInstances := 0
+	runningInstances := 0
+
+	for _, procName := range processes {
+		instances, err := s.processManager.GetProcessStatus(procName)
+		if err != nil {
+			continue
+		}
+		totalInstances += len(instances)
+		for _, inst := range instances {
+			if inst.GetStatus() == "running" {
+				runningInstances++
+			}
+		}
+	}
+
+	response := map[string]interface{}{
+		"status":            "running",
+		"processes":         len(processes),
+		"total_instances":   totalInstances,
+		"running_instances": runningInstances,
+	}
+
+	s.writeJSON(w, http.StatusOK, response)
 }
 
 // handleHealth handles GET /health

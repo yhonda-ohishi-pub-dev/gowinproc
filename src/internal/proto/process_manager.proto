@@ -1,0 +1,245 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/proto";
+
+// ProcessManager service provides process lifecycle management and monitoring
+service ProcessManager {
+  // Process Management
+  rpc ListProcesses(ListProcessesRequest) returns (ListProcessesResponse);
+  rpc GetProcess(GetProcessRequest) returns (ProcessInfo);
+  rpc StartProcess(StartProcessRequest) returns (ProcessInfo);
+  rpc StopProcess(StopProcessRequest) returns (Empty);
+  rpc RestartProcess(RestartProcessRequest) returns (ProcessInfo);
+  rpc GetMetrics(GetMetricsRequest) returns (Metrics);
+  rpc ScaleProcess(ScaleProcessRequest) returns (ProcessInfo);
+
+  // Update Management
+  rpc UpdateAllProcesses(UpdateAllRequest) returns (UpdateResponse);
+  rpc UpdateProcess(UpdateProcessRequest) returns (UpdateResponse);
+  rpc GetProcessVersion(GetVersionRequest) returns (VersionInfo);
+  rpc ListAvailableUpdates(ListUpdatesRequest) returns (ListUpdatesResponse);
+  rpc RollbackProcess(RollbackRequest) returns (RollbackResponse);
+
+  // Streaming - Update Progress Monitoring
+  rpc WatchUpdate(WatchUpdateRequest) returns (stream UpdateStatus);
+}
+
+// Process Management Messages
+
+message ListProcessesRequest {
+  // Empty request
+}
+
+message ListProcessesResponse {
+  repeated string process_names = 1;
+  int32 count = 2;
+}
+
+message GetProcessRequest {
+  string process_name = 1;
+}
+
+message ProcessInfo {
+  string name = 1;
+  repeated ProcessInstance instances = 2;
+  int32 instance_count = 3;
+  ProcessConfig config = 4;
+}
+
+message ProcessInstance {
+  string id = 1;
+  string process_name = 2;
+  int32 pid = 3;
+  string status = 4;
+  int64 start_time = 5;  // Unix timestamp
+  int32 port = 6;
+  string env_file_path = 7;
+  ProcessMetrics metrics = 8;
+}
+
+message ProcessConfig {
+  string name = 1;
+  string binary_path = 2;
+  repeated string args = 3;
+  string work_dir = 4;
+  int32 port = 5;
+  int32 min_instances = 6;
+  int32 max_instances = 7;
+  bool auto_restart = 8;
+  GitHubConfig github = 9;
+  SecretsConfig secrets = 10;
+  CertificatesConfig certificates = 11;
+}
+
+message GitHubConfig {
+  string repo = 1;
+  bool auto_update = 2;
+  int32 update_check_interval = 3;  // seconds
+}
+
+message SecretsConfig {
+  bool enabled = 1;
+  string source = 2;  // "local" or "cloudflare"
+  string env_file = 3;
+}
+
+message CertificatesConfig {
+  bool enabled = 1;
+  string cert_path = 2;
+  string key_path = 3;
+}
+
+message StartProcessRequest {
+  string process_name = 1;
+}
+
+message StopProcessRequest {
+  string process_name = 1;
+  string instance_id = 2;  // Optional - if empty, stops all instances
+  bool all = 3;
+}
+
+message RestartProcessRequest {
+  string process_name = 1;
+  string instance_id = 2;  // Optional - if empty, restarts all instances
+}
+
+message GetMetricsRequest {
+  string process_name = 1;
+  string instance_id = 2;  // Optional - if empty, returns aggregated metrics
+}
+
+message Metrics {
+  string process_name = 1;
+  repeated ProcessMetrics instances = 2;
+  AggregatedMetrics aggregated = 3;
+}
+
+message ProcessMetrics {
+  string instance_id = 1;
+  double cpu_usage = 2;      // percentage
+  uint64 memory_usage = 3;   // bytes
+  uint64 disk_read = 4;      // bytes
+  uint64 disk_write = 5;     // bytes
+  uint64 network_recv = 6;   // bytes
+  uint64 network_sent = 7;   // bytes
+  int64 uptime = 8;          // seconds
+}
+
+message AggregatedMetrics {
+  double total_cpu_usage = 1;
+  uint64 total_memory_usage = 2;
+  uint64 total_disk_read = 3;
+  uint64 total_disk_write = 4;
+  uint64 total_network_recv = 5;
+  uint64 total_network_sent = 6;
+  int32 instance_count = 7;
+}
+
+message ScaleProcessRequest {
+  string process_name = 1;
+  int32 target_instances = 2;
+}
+
+// Update Management Messages
+
+message UpdateAllRequest {
+  string strategy = 1;        // rolling, blue-green, immediate
+  bool force = 2;
+  int32 timeout = 3;          // seconds
+  int32 health_check_delay = 4;  // seconds
+}
+
+message UpdateProcessRequest {
+  string process_name = 1;
+  string version = 2;         // empty string = latest version
+  bool force = 3;
+  string strategy = 4;
+  repeated int32 instances = 5;  // specific instance indices (optional)
+}
+
+message UpdateResponse {
+  bool success = 1;
+  string message = 2;
+  string update_id = 3;
+  repeated ProcessUpdateStatus processes = 4;
+}
+
+message ProcessUpdateStatus {
+  string name = 1;
+  string current_version = 2;
+  string target_version = 3;
+  string status = 4;          // updating, completed, failed
+  int32 estimated_duration = 5;  // seconds
+}
+
+message GetVersionRequest {
+  string process_name = 1;
+}
+
+message VersionInfo {
+  string process_name = 1;
+  string current_version = 2;
+  string latest_version = 3;
+  bool update_available = 4;
+  repeated InstanceVersion instances = 5;
+}
+
+message InstanceVersion {
+  string id = 1;
+  string version = 2;
+  int64 uptime = 3;  // seconds
+}
+
+message ListUpdatesRequest {
+  // Empty request
+}
+
+message ListUpdatesResponse {
+  repeated UpdateAvailable updates = 1;
+}
+
+message UpdateAvailable {
+  string process_name = 1;
+  string current_version = 2;
+  string latest_version = 3;
+  string release_date = 4;
+  string release_notes = 5;
+  bool up_to_date = 6;
+}
+
+message RollbackRequest {
+  string process_name = 1;
+  string version = 2;  // empty string = previous version
+}
+
+message RollbackResponse {
+  bool success = 1;
+  string process_name = 2;
+  string from_version = 3;
+  string to_version = 4;
+  string rollback_id = 5;
+}
+
+// Streaming - Real-time Update Monitoring
+
+message WatchUpdateRequest {
+  string update_id = 1;
+}
+
+message UpdateStatus {
+  string update_id = 1;
+  string process_name = 2;
+  string status = 3;  // downloading, extracting, stopping, starting, completed, failed
+  int32 progress = 4;  // 0-100
+  string message = 5;
+  int64 timestamp = 6;  // Unix timestamp
+}
+
+// Common Messages
+
+message Empty {
+  // Empty message
+}

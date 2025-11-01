@@ -1,0 +1,64 @@
+.instance-list table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.instance-list th {
+  text-align: left;
+  padding: 0.75rem;
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.875rem;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.instance-list td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.instance-list tbody tr:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.id-cell {
+  font-family: monospace;
+  font-size: 0.875rem;
+}
+
+.status {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-running {
+  background-color: var(--success-color);
+  color: white;
+}
+
+.status-stopped {
+  background-color: var(--text-secondary);
+  color: white;
+}
+
+.status-starting {
+  background-color: var(--warning-color);
+  color: white;
+}
+
+.status-error {
+  background-color: var(--danger-color);
+  color: white;
+}
+
+.actions-cell {
+  display: flex;
+  gap: 0.25rem;
+  justify-content: flex-end;
+}

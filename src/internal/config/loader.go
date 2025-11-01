@@ -112,14 +112,18 @@ func validate(cfg *models.Config) error {
 
 	// Validate GitHub configuration
 	if cfg.GitHub.Mode == "cloudflare" {
-		if cfg.GitHub.Cloudflare == nil {
-			return fmt.Errorf("cloudflare github configuration is required when mode is 'cloudflare'")
-		}
-		if cfg.GitHub.Cloudflare.WorkerURL == "" {
-			return fmt.Errorf("github worker URL is required")
-		}
-		if cfg.GitHub.Cloudflare.PrivateKeyPath == "" {
-			return fmt.Errorf("github private key path is required")
+		// GitHub Cloudflare config is optional if secrets mode is also cloudflare
+		// (In that case, we use the secrets worker URL for both secrets and repo list)
+		if cfg.GitHub.Cloudflare != nil {
+			if cfg.GitHub.Cloudflare.WorkerURL == "" {
+				return fmt.Errorf("github worker URL is required when github.cloudflare is specified")
+			}
+			if cfg.GitHub.Cloudflare.PrivateKeyPath == "" {
+				return fmt.Errorf("github private key path is required when github.cloudflare is specified")
+			}
+		} else if cfg.Secrets.Mode != "cloudflare" {
+			// If secrets mode is not cloudflare, we need github.cloudflare config
+			return fmt.Errorf("cloudflare github configuration is required when mode is 'cloudflare' and secrets mode is not 'cloudflare'")
 		}
 	}
 

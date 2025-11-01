@@ -25,9 +25,10 @@ func NewAuthClient(workerURL, privateKeyPath, clientID string) (*AuthClient, err
 
 	// Create go_auth client
 	client, err := authclient.NewClient(authclient.ClientConfig{
-		BaseURL:    workerURL,
-		ClientID:   clientID,
-		PrivateKey: privateKey,
+		BaseURL:         workerURL,
+		ClientID:        clientID,
+		PrivateKey:      privateKey,
+		IncludeRepoList: true, // Request repository list from Cloudflare Auth Worker
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create auth client: %w", err)
@@ -36,6 +37,12 @@ func NewAuthClient(workerURL, privateKeyPath, clientID string) (*AuthClient, err
 	return &AuthClient{
 		client: client,
 	}, nil
+}
+
+// AuthResult contains secrets and repository list from authentication
+type AuthResult struct {
+	SecretData map[string]string
+	RepoList   []string
 }
 
 // GetSecrets fetches secrets from cloudflare-auth-worker
@@ -53,6 +60,25 @@ func (c *AuthClient) GetSecrets(processName string) (map[string]string, error) {
 
 	// SecretData is already map[string]string from go_auth
 	return result.SecretData, nil
+}
+
+// Authenticate performs authentication and returns both secrets and repository list
+func (c *AuthClient) Authenticate() (*AuthResult, error) {
+	// Authenticate with Cloudflare Worker
+	result, err := c.client.Authenticate()
+	if err != nil {
+		return nil, fmt.Errorf("authentication failed: %w", err)
+	}
+
+	// Extract secret data from response
+	if !result.Success {
+		return nil, fmt.Errorf("authentication unsuccessful: %s", result.Error)
+	}
+
+	return &AuthResult{
+		SecretData: result.SecretData,
+		RepoList:   result.RepoList,
+	}, nil
 }
 
 // Health checks the health of the Cloudflare Worker

@@ -1,0 +1,110 @@
+import { FC } from 'react'
+import { Metrics } from '../types'
+import '../styles/MetricsChart.css'
+
+interface MetricsChartProps {
+  metrics: Metrics
+}
+
+const MetricsChart: FC<MetricsChartProps> = ({ metrics }) => {
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
+  }
+
+  const formatBytesPerSec = (bytes: number): string => {
+    return formatBytes(bytes) + '/s'
+  }
+
+  if (!metrics.aggregated) {
+    return <div className="no-metrics">No metrics available</div>
+  }
+
+  return (
+    <div className="metrics-chart">
+      <div className="metrics-grid">
+        <div className="metric-card">
+          <div className="metric-label">Total CPU Usage</div>
+          <div className="metric-value">
+            {metrics.aggregated.total_cpu_usage.toFixed(1)}%
+          </div>
+          <div className="metric-bar">
+            <div
+              className="metric-bar-fill cpu"
+              style={{ width: `${Math.min(metrics.aggregated.total_cpu_usage, 100)}%` }}
+            />
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-label">Total Memory Usage</div>
+          <div className="metric-value">
+            {formatBytes(metrics.aggregated.total_memory_usage)}
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-label">Active Instances</div>
+          <div className="metric-value">{metrics.aggregated.instance_count}</div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-label">Disk Read</div>
+          <div className="metric-value">
+            {formatBytes(metrics.aggregated.total_disk_read)}
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-label">Disk Write</div>
+          <div className="metric-value">
+            {formatBytes(metrics.aggregated.total_disk_write)}
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-label">Network Received</div>
+          <div className="metric-value">
+            {formatBytes(metrics.aggregated.total_network_recv)}
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-label">Network Sent</div>
+          <div className="metric-value">
+            {formatBytes(metrics.aggregated.total_network_sent)}
+          </div>
+        </div>
+      </div>
+
+      <div className="instance-metrics">
+        <h4>Per-Instance Metrics</h4>
+        <table>
+          <thead>
+            <tr>
+              <th>Instance</th>
+              <th>CPU</th>
+              <th>Memory</th>
+              <th>Uptime</th>
+            </tr>
+          </thead>
+          <tbody>
+            {metrics.instances.map((instance) => (
+              <tr key={instance.instance_id}>
+                <td>{instance.instance_id.substring(0, 8)}</td>
+                <td>{instance.cpu_usage.toFixed(1)}%</td>
+                <td>{formatBytes(instance.memory_usage)}</td>
+                <td>{Math.floor(instance.uptime / 60)}m</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+export default MetricsChart
