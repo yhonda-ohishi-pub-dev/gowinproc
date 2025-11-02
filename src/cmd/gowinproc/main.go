@@ -25,6 +25,7 @@ import (
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/cloudflare"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/config"
 	grpcserver "github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/grpc"
+	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/handlers"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/loadbalancer"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/poller"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/process"
@@ -60,6 +61,44 @@ func main() {
 	multiWriter := io.MultiWriter(os.Stdout, logFile)
 	log.SetOutput(multiWriter)
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
+	// Check for multiple instances using lock file
+	lockFilePath := filepath.Join(os.TempDir(), "gowinproc.lock")
+	lockFile, err := os.OpenFile(lockFilePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0666)
+	if err != nil {
+		if os.IsExist(err) {
+			// Lock file exists, kill the old process and take over
+			log.Printf("Lock file exists, killing old gowinproc process...")
+			lockContent, readErr := os.ReadFile(lockFilePath)
+			if readErr == nil {
+				oldPID, parseErr := strconv.Atoi(strings.TrimSpace(string(lockContent)))
+				if parseErr == nil && oldPID != os.Getpid() {
+					log.Printf("Killing old process PID: %d", oldPID)
+					killCmd := exec.Command("taskkill", "/F", "/PID", strconv.Itoa(oldPID))
+					if killErr := killCmd.Run(); killErr != nil {
+						log.Printf("Warning: Failed to kill old process: %v", killErr)
+					} else {
+						log.Printf("Successfully killed old process PID: %d", oldPID)
+					}
+				}
+			}
+			// Remove old lock file
+			os.Remove(lockFilePath)
+			// Try to create lock file again
+			lockFile, err = os.OpenFile(lockFilePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0666)
+			if err != nil {
+				log.Fatalf("Failed to create lock file after cleanup: %v", err)
+			}
+		} else {
+			log.Fatalf("Failed to create lock file: %v", err)
+		}
+	}
+	defer func() {
+		lockFile.Close()
+		os.Remove(lockFilePath)
+	}()
+	fmt.Fprintf(lockFile, "%d", os.Getpid())
+	log.Printf("Lock file created with PID: %d", os.Getpid())
 
 	// Clean up existing processes on startup
 	log.Printf("Cleaning up existing processes...")
@@ -250,6 +289,17 @@ func main() {
 		w.Write([]byte(`{"status":"healthy"}`))
 	})
 
+	// gRPC レジストリエンドポイント - プロキシ可能なプロセス一覧を返す
+	registryHandler := handlers.NewRegistryHandler(processManager, cfg.Server.Host, cfg.Server.Port)
+	mux.HandleFunc("/api/grpc/registry", registryHandler.GetRegistry)
+
+	// gRPC Invokeエンドポイント - JSON経由でgRPCメソッドを実行
+	grpcInvokeHandler := handlers.NewGrpcInvokeHandler(processManager)
+	mux.HandleFunc("/api/grpc/invoke", grpcInvokeHandler.InvokeMethod)
+
+	// gRPC-Web プロキシハンドラー - ネイティブgRPCバックエンドへのプロキシ
+	grpcProxyHandler := handlers.NewGrpcProxyHandler(processManager)
+
 	// Graceful shutdown endpoint (for replacing running instances)
 	mux.HandleFunc("/shutdown", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
@@ -297,6 +347,31 @@ func main() {
 						log.Printf("Debug: gRPC-Web request recovered from panic (client likely disconnected): %v", r)
 					}
 				}()
+
+				// Dynamic gRPC-Web proxy: route to managed processes
+				// Format: /proxy/{process_name}/{grpc_service_path}
+				if len(r.URL.Path) > 7 && r.URL.Path[:7] == "/proxy/" {
+					// Extract process name from path
+					pathParts := r.URL.Path[7:] // Remove "/proxy/"
+					slashIdx := -1
+					for i, ch := range pathParts {
+						if ch == '/' {
+							slashIdx = i
+							break
+						}
+					}
+
+					if slashIdx > 0 {
+						processName := pathParts[:slashIdx]
+						grpcPath := pathParts[slashIdx:] // Keep the leading /
+
+						// Use gRPC-Web proxy handler to forward to native gRPC backend
+						grpcProxyHandler.ProxyRequest(w, r, processName, grpcPath)
+						return
+					}
+				}
+
+				// Default: forward to gowinproc's own gRPC server
 				wrappedGrpc.ServeHTTP(w, r)
 				return
 			}

@@ -171,12 +171,13 @@ func (m *Manager) performUpdate(processName, targetVersion string, force bool) {
 	status.Message = "Starting new instance"
 	status.Progress = 75
 	m.setUpdateStatus(processName, status)
-	log.Printf("[Update] Starting new instance for %s", processName)
+	log.Printf("[Update] Starting new instance for %s (allowing max_instances+1 temporarily)", processName)
 
 	// TODO: Update process config with new binary path
 	// This requires modifying the process manager to support binary path updates
 
-	newInstance, err := m.processManager.StartProcess(processName)
+	// Start new instance with allowExceedMax=true for zero-downtime hot restart
+	newInstance, err := m.processManager.StartProcessWithOptions(processName, true)
 	if err != nil {
 		log.Printf("[Update] ERROR: Failed to start new instance for %s: %v", processName, err)
 		status.Stage = "failed"

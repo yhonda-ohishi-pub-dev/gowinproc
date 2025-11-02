@@ -66,6 +66,24 @@ processes:
       timeout: 5s
       retries: 3
 
+  # etc_meisai_scraper - ETCスクレイピングサービス
+  - name: etc_meisai_scraper
+    repository: yhonda-ohishi-pub-dev/etc_meisai_scraper
+    max_instances: 2
+    auto_restart: true
+    env:
+      ETC_HEADLESS: "false"  # ブラウザ表示モード（README参照）
+    health_check:
+      enabled: false  # gRPCサーバーのためHTTPヘルスチェック無効
+
+  # desktop-server - システムトレイアプリ（フロントエンド埋め込み）
+  - name: desktop_server
+    repository: yhonda-ohishi-pub-dev/desktop-server
+    max_instances: 1
+    auto_restart: true
+    health_check:
+      enabled: false  # HTTPヘルスチェック無効
+
 # Cloudflareから環境変数（DB接続情報）を取得
 secrets:
   mode: cloudflare

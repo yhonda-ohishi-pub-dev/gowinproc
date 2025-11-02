@@ -170,9 +170,13 @@ func (p *GitHubPoller) checkAndUpdate(processName, latestVersion string) error {
 
 	// If update is available, trigger automatic update
 	if versionInfo != nil && versionInfo.UpdateAvailable {
+		currentVersion := "none"
+		if versionInfo.CurrentVersion != nil {
+			currentVersion = versionInfo.CurrentVersion.Tag
+		}
 		log.Printf("Update available for %s: %s -> %s, triggering auto-update",
 			processName,
-			versionInfo.CurrentVersion.Tag,
+			currentVersion,
 			versionInfo.LatestVersion.Tag)
 
 		// Trigger update with latest version

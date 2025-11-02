@@ -3,7 +3,7 @@ import ProcessList from './components/ProcessList'
 import ProcessDetail from './components/ProcessDetail'
 import UpdateManager from './components/UpdateManager'
 import RepositoryList from './components/RepositoryList'
-import { ProcessInfo } from './types'
+import { GrpcRegistry } from './components/GrpcRegistry'
 import { grpcProcessApi } from './api/grpc-client'
 import './styles/App.css'
 
@@ -19,7 +19,7 @@ interface ServerStatus {
 function App() {
   const [processes, setProcesses] = useState<string[]>([])
   const [selectedProcess, setSelectedProcess] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'processes' | 'updates' | 'repositories'>('processes')
+  const [activeTab, setActiveTab] = useState<'processes' | 'updates' | 'repositories' | 'registry'>('processes')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null)
@@ -130,6 +130,12 @@ function App() {
           >
             Repositories
           </button>
+          <button
+            className={activeTab === 'registry' ? 'active' : ''}
+            onClick={() => setActiveTab('registry')}
+          >
+            Registry
+          </button>
         </nav>
       </header>
 
@@ -161,8 +167,10 @@ function App() {
               </div>
             ) : activeTab === 'updates' ? (
               <UpdateManager processes={processes} />
-            ) : (
+            ) : activeTab === 'repositories' ? (
               <RepositoryList />
+            ) : (
+              <GrpcRegistry />
             )}
           </div>
         )}

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,7 +28,8 @@ type Manager struct {
 	certManager    *certs.Manager
 	secretManager  *secrets.Manager
 	versionManager VersionManager
-	nextPort       int // Next port to try for auto-allocation
+	pidTracker     *PIDTracker // Tracks PIDs for cleanup
+	nextPort       int         // Next port to try for auto-allocation
 	mu             sync.RWMutex
 	ctx            context.Context
 	cancel         context.CancelFunc
@@ -49,6 +51,7 @@ func NewManager(config *models.Config, certMgr *certs.Manager, secretMgr *secret
 		processes:     make(map[string]*models.ManagedProcess),
 		certManager:   certMgr,
 		secretManager: secretMgr,
+		pidTracker:    NewPIDTracker("./tracked_pids.txt"),
 		nextPort:      5001, // Start port allocation from 5001
 		ctx:           ctx,
 		cancel:        cancel,
@@ -62,6 +65,12 @@ func (m *Manager) SetVersionManager(versionMgr VersionManager) {
 
 // Initialize initializes all configured processes
 func (m *Manager) Initialize() error {
+	// Clean up orphaned processes from previous session
+	log.Println("Cleaning up orphaned processes from previous session...")
+	if err := m.pidTracker.CleanupOrphans(); err != nil {
+		log.Printf("Warning: Failed to cleanup orphaned processes: %v", err)
+	}
+
 	for i := range m.config.Processes {
 		procConfig := m.config.Processes[i]
 
@@ -175,6 +184,12 @@ func (m *Manager) ensureBinaryExists(procConfig *models.ProcessConfig) error {
 
 // StartProcess starts a new instance of a process
 func (m *Manager) StartProcess(processName string) (*models.ProcessInstance, error) {
+	return m.StartProcessWithOptions(processName, false)
+}
+
+// StartProcessWithOptions starts a new instance of a process with options
+// allowExceedMax: if true, allows starting a new instance even if max_instances is reached (for hot restart)
+func (m *Manager) StartProcessWithOptions(processName string, allowExceedMax bool) (*models.ProcessInstance, error) {
 	m.mu.RLock()
 	managedProc, exists := m.processes[processName]
 	m.mu.RUnlock()
@@ -183,10 +198,12 @@ func (m *Manager) StartProcess(processName string) (*models.ProcessInstance, err
 		return nil, fmt.Errorf("process %s not found", processName)
 	}
 
-	// Check if we can start more instances
-	runningInstances := managedProc.GetRunningInstances()
-	if len(runningInstances) >= managedProc.Config.MaxInstances {
-		return nil, fmt.Errorf("maximum instances (%d) already running", managedProc.Config.MaxInstances)
+	// Check if we can start more instances (skip check during hot restart)
+	if !allowExceedMax {
+		runningInstances := managedProc.GetRunningInstances()
+		if len(runningInstances) >= managedProc.Config.MaxInstances {
+			return nil, fmt.Errorf("maximum instances (%d) already running", managedProc.Config.MaxInstances)
+		}
 	}
 
 	// Find an available port (try up to 10 times from nextPort)
@@ -261,6 +278,17 @@ func (m *Manager) StartProcess(processName string) (*models.ProcessInstance, err
 		return nil, fmt.Errorf("failed to load env file: %w", err)
 	}
 
+	// DEBUG: Log environment variables being loaded
+	log.Printf("[DEBUG] Loading environment variables for %s:", processName)
+	for k, v := range envVars {
+		// Hide sensitive values in logs
+		if strings.Contains(strings.ToLower(k), "password") || strings.Contains(strings.ToLower(k), "secret") || strings.Contains(strings.ToLower(k), "key") {
+			log.Printf("  %s=***HIDDEN***", k)
+		} else {
+			log.Printf("  %s=%s", k, v)
+		}
+	}
+
 	// Set environment variables
 	cmd.Env = os.Environ()
 	for k, v := range envVars {
@@ -281,6 +309,11 @@ func (m *Manager) StartProcess(processName string) (*models.ProcessInstance, err
 	instance.PID = cmd.Process.Pid
 	instance.StderrBuf = &stderrBuf
 	instance.SetStatus(models.StatusRunning)
+
+	// Track PID for cleanup
+	if err := m.pidTracker.Add(instance.PID); err != nil {
+		log.Printf("Warning: Failed to track PID %d: %v", instance.PID, err)
+	}
 
 	// Add instance to managed process
 	managedProc.AddInstance(instance)
@@ -330,6 +363,12 @@ func (m *Manager) StopProcess(processName, instanceID string) error {
 	}
 
 	targetInstance.SetStatus(models.StatusStopped)
+
+	// Remove PID from tracking (successful stop)
+	if err := m.pidTracker.Remove(targetInstance.PID); err != nil {
+		log.Printf("Warning: Failed to remove PID %d from tracking: %v", targetInstance.PID, err)
+	}
+
 	managedProc.RemoveInstance(instanceID)
 
 	return nil
@@ -363,6 +402,12 @@ func (m *Manager) StopProcessGracefully(processName, instanceID string, timeout 
 	if targetInstance.Command == nil || targetInstance.Command.Process == nil {
 		// Process already stopped or not running
 		targetInstance.SetStatus(models.StatusStopped)
+
+		// Remove PID from tracking (successful stop)
+		if err := m.pidTracker.Remove(targetInstance.PID); err != nil {
+			log.Printf("Warning: Failed to remove PID %d from tracking: %v", targetInstance.PID, err)
+		}
+
 		managedProc.RemoveInstance(instanceID)
 		return nil
 	}
@@ -402,6 +447,12 @@ func (m *Manager) StopProcessGracefully(processName, instanceID string, timeout 
 			log.Printf("[GracefulShutdown] Process %s (instance: %s) exited gracefully", processName, instanceID)
 		}
 		targetInstance.SetStatus(models.StatusStopped)
+
+		// Remove PID from tracking (successful stop)
+		if err := m.pidTracker.Remove(targetInstance.PID); err != nil {
+			log.Printf("Warning: Failed to remove PID %d from tracking: %v", targetInstance.PID, err)
+		}
+
 		managedProc.RemoveInstance(instanceID)
 		return nil
 	}
@@ -456,6 +507,12 @@ func (m *Manager) forceKillProcess(instance *models.ProcessInstance, managedProc
 	}
 
 	instance.SetStatus(models.StatusStopped)
+
+	// Remove PID from tracking (successful stop)
+	if err := m.pidTracker.Remove(instance.PID); err != nil {
+		log.Printf("Warning: Failed to remove PID %d from tracking: %v", instance.PID, err)
+	}
+
 	managedProc.RemoveInstance(instanceID)
 	return nil
 }
@@ -577,6 +634,11 @@ func (m *Manager) monitorProcess(instance *models.ProcessInstance) {
 		instance.SetStatus(models.StatusStopped)
 		log.Printf("Process %s (port %d, PID %d) stopped normally",
 			instance.ProcessName, instance.Port, instance.PID)
+	}
+
+	// Remove PID from tracking (process exited)
+	if err := m.pidTracker.Remove(instance.PID); err != nil {
+		log.Printf("Warning: Failed to remove PID %d from tracking: %v", instance.PID, err)
 	}
 
 	// Get managed process config
