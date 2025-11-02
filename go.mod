@@ -5,8 +5,10 @@ go 1.25.1
 require (
 	github.com/getlantern/systray v1.2.2
 	github.com/google/uuid v1.6.0
+	github.com/improbable-eng/grpc-web v0.15.0
 	github.com/joho/godotenv v1.5.1
-	github.com/yhonda-ohishi-pub-dev/go_auth v0.1.3
+	github.com/shirou/gopsutil/v4 v4.25.10
+	github.com/yhonda-ohishi-pub-dev/go_auth v0.1.5
 	google.golang.org/grpc v1.76.0
 	google.golang.org/protobuf v1.36.10
 	gopkg.in/yaml.v3 v3.0.1
@@ -24,13 +26,11 @@ require (
 	github.com/getlantern/ops v0.0.0-20190325191751-d70cb0d6f85f // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-stack/stack v1.8.0 // indirect
-	github.com/improbable-eng/grpc-web v0.15.0 // indirect
 	github.com/klauspost/compress v1.11.7 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/oxtoacart/bpool v0.0.0-20190530202638-03653db5a59c // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/rs/cors v1.7.0 // indirect
-	github.com/shirou/gopsutil/v4 v4.25.10 // indirect
 	github.com/tklauser/go-sysconf v0.3.15 // indirect
 	github.com/tklauser/numcpus v0.10.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect

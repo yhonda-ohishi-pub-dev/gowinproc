@@ -400,19 +400,44 @@ func main() {
 		mux.ServeHTTP(w, r)
 	})
 
-	// Wrap with tunnel authentication middleware if enabled
-	var finalHandler http.Handler = baseHandler
+	// Apply authentication middleware to baseHandler if enabled
+	var authHandler http.Handler = baseHandler
 	if tunnelManager != nil && cfg.Tunnel.RequireAuth {
 		authMiddleware := authmiddleware.NewTunnelAuthMiddleware(authmiddleware.Config{
-			RequireTunnel: cfg.Tunnel.RequireAuth,
+			RequireTunnel:         true, // Require auth only for tunnel access (Cloudflare headers present)
+			SkipAuthForLocalhost:  true, // Skip auth for localhost (development mode)
 			GetAccessToken: func() string {
 				return tunnelManager.GetAccessToken()
 			},
-			WhitelistPaths: []string{"/health", "/favicon.ico"},
+			WhitelistPaths: []string{
+				"/health",
+				"/favicon.ico",
+			},
 		})
-		finalHandler = authMiddleware.Middleware(baseHandler)
-		log.Printf("Tunnel authentication middleware enabled")
+		authHandler = authMiddleware.Middleware(baseHandler)
+		log.Printf("Tunnel authentication middleware enabled (localhost: no auth, tunnel: auth required)")
 	}
+
+	// CORS middleware (applied first, wraps auth)
+	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Add CORS headers for all requests
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, x-grpc-web, x-user-agent, Authorization")
+			w.Header().Set("Access-Control-Expose-Headers", "grpc-status, grpc-message")
+		}
+
+		// Handle preflight requests immediately (before auth)
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// Pass to auth handler (which wraps baseHandler)
+		authHandler.ServeHTTP(w, r)
+	})
 
 	// Create HTTP server with gRPC-Web support
 	httpServer := &http.Server{
