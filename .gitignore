@@ -65,6 +65,7 @@ processes/**/.env
 *.swo
 *~
 .DS_Store
+*.code-workspace
 
 # Configuration (optional - may want to version control config.yaml)
 # config.yaml
