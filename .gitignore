@@ -78,6 +78,9 @@ processes/*/
 tmp/
 temp/
 *.tmp
+downloads/
+tracked_pids.txt
+nul
 
 # Windows specific
 Thumbs.db
