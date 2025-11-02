@@ -91,9 +91,12 @@ type WebhookConfig struct {
 
 // TunnelConfig contains Cloudflare Tunnel configuration
 type TunnelConfig struct {
-	Enabled  bool   `yaml:"enabled"`
-	Port     int    `yaml:"port"`
-	Protocol string `yaml:"protocol"` // "http2" or "quic"
+	Enabled        bool   `yaml:"enabled"`
+	Port           int    `yaml:"port"`
+	Protocol       string `yaml:"protocol"` // "http2" or "quic"
+	ClientID       string `yaml:"client_id,omitempty"`
+	WorkerURL      string `yaml:"worker_url,omitempty"`       // Cloudflare Auth Worker URL
+	PrivateKeyPath string `yaml:"private_key_path,omitempty"` // RSA private key for auth
 }
 
 // LoadBalancerConfig contains load balancer configuration
