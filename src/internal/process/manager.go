@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -266,6 +267,12 @@ func (m *Manager) StartProcessWithOptions(processName string, allowExceedMax boo
 
 	cmd := exec.CommandContext(m.ctx, binaryPath, managedProc.Config.Args...)
 	cmd.Dir = managedProc.Config.WorkDir
+
+	// Windows: Hide console window for child processes
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: 0x08000000, // CREATE_NO_WINDOW
+	}
 
 	// Capture stdout and stderr to log process output
 	var stderrBuf bytes.Buffer
