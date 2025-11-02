@@ -11,6 +11,7 @@ tunnel:
   client_id: gowinproc
   worker_url: https://ohishi-auth.mtamaramu.com
   private_key_path: ./keys/client_private.pem
+  require_auth: true  # Require Bearer token authentication for tunnel access
 
 # db_service プロセス定義
 processes:

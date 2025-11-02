@@ -97,6 +97,7 @@ type TunnelConfig struct {
 	ClientID       string `yaml:"client_id,omitempty"`
 	WorkerURL      string `yaml:"worker_url,omitempty"`       // Cloudflare Auth Worker URL
 	PrivateKeyPath string `yaml:"private_key_path,omitempty"` // RSA private key for auth
+	RequireAuth    bool   `yaml:"require_auth"`               // Require authentication for tunnel access
 }
 
 // LoadBalancerConfig contains load balancer configuration

@@ -21,13 +21,14 @@ import (
 
 // Manager handles Cloudflare Tunnel (cloudflared) operations
 type Manager struct {
-	config    *models.TunnelConfig
-	cmd       *exec.Cmd
-	running   bool
-	tunnelURL string // Current tunnel URL (https://xxx.trycloudflare.com)
-	mu        sync.RWMutex
-	ctx       context.Context
-	cancel    context.CancelFunc
+	config      *models.TunnelConfig
+	cmd         *exec.Cmd
+	running     bool
+	tunnelURL   string // Current tunnel URL (https://xxx.trycloudflare.com)
+	accessToken string // Access token for tunnel authentication
+	mu          sync.RWMutex
+	ctx         context.Context
+	cancel      context.CancelFunc
 }
 
 // NewManager creates a new tunnel manager
@@ -133,7 +134,8 @@ func (m *Manager) Stop() error {
 	}
 
 	m.running = false
-	m.tunnelURL = "" // Clear tunnel URL
+	m.tunnelURL = ""   // Clear tunnel URL
+	m.accessToken = "" // Clear access token
 	log.Println("Cloudflare Tunnel stopped")
 	return nil
 }
@@ -267,7 +269,19 @@ func (m *Manager) registerTunnelURL(tunnelURL string) {
 		return
 	}
 
-	log.Printf("[Tunnel] Successfully registered tunnel URL: %s (token: %s)", tunnelURL, result.Token)
+	// Store access token for tunnel authentication
+	m.mu.Lock()
+	m.accessToken = result.AccessToken
+	m.mu.Unlock()
+
+	log.Printf("[Tunnel] Successfully registered tunnel URL: %s (token: %s, accessToken: %s)", tunnelURL, result.Token, result.AccessToken)
+}
+
+// GetAccessToken returns the current access token for tunnel authentication
+func (m *Manager) GetAccessToken() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.accessToken
 }
 
 // tunnelLogger is a simple logger for cloudflared output

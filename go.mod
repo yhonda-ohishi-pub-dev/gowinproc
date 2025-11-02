@@ -6,7 +6,7 @@ require (
 	github.com/getlantern/systray v1.2.2
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
-	github.com/yhonda-ohishi-pub-dev/go_auth v0.1.0
+	github.com/yhonda-ohishi-pub-dev/go_auth v0.1.3
 	google.golang.org/grpc v1.76.0
 	google.golang.org/protobuf v1.36.10
 	gopkg.in/yaml.v3 v3.0.1

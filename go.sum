@@ -347,6 +347,10 @@ github.com/yhonda-ohishi-pub-dev/go_auth v0.0.0-20251101054858-1f812d9201b6 h1:F
 github.com/yhonda-ohishi-pub-dev/go_auth v0.0.0-20251101054858-1f812d9201b6/go.mod h1:ysEk4AC6nyWNEq+2qqZMtk/EZNM6+9UFfBrb39AaqPw=
 github.com/yhonda-ohishi-pub-dev/go_auth v0.1.0 h1:whZ+SEfQEd7xPWCjSL+JeBC/ksz95xg3Jcf2rh+noIo=
 github.com/yhonda-ohishi-pub-dev/go_auth v0.1.0/go.mod h1:ysEk4AC6nyWNEq+2qqZMtk/EZNM6+9UFfBrb39AaqPw=
+github.com/yhonda-ohishi-pub-dev/go_auth v0.1.1 h1:eFhvKhP5RG8wEoAKiqRIjISwipahBlLlITzsokSo4/U=
+github.com/yhonda-ohishi-pub-dev/go_auth v0.1.1/go.mod h1:ysEk4AC6nyWNEq+2qqZMtk/EZNM6+9UFfBrb39AaqPw=
+github.com/yhonda-ohishi-pub-dev/go_auth v0.1.3 h1:pQm1ngc339a/cpoK+09ARxOkFkb3r+y84tykbGnfkgc=
+github.com/yhonda-ohishi-pub-dev/go_auth v0.1.3/go.mod h1:ysEk4AC6nyWNEq+2qqZMtk/EZNM6+9UFfBrb39AaqPw=
 github.com/yusufpapurcu/wmi v1.2.4 h1:zFUKzehAFReQwLys1b/iSMl+JQGSCSjtVqQn9bBrPo0=
 github.com/yusufpapurcu/wmi v1.2.4/go.mod h1:SBZ9tNy3G9/m5Oi98Zks0QjeHVDvuK0qfxQmPyzfmi0=
 go.etcd.io/bbolt v1.3.3/go.mod h1:IbVyRI1SCnLcuJnV2u8VeU0CEYM7e686BmAb1XKL+uU=

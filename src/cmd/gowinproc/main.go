@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/improbable-eng/grpc-web/go/grpcweb"
+	"github.com/yhonda-ohishi-pub-dev/go_auth/pkg/authmiddleware"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/api"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/certs"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/cloudflare"
@@ -318,74 +319,6 @@ func main() {
 		}()
 	})
 
-	// Create HTTP server with gRPC-Web support
-	httpServer := &http.Server{
-		Addr: fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Add CORS headers for all requests
-			origin := r.Header.Get("Origin")
-			if origin != "" {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-				w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
-				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, x-grpc-web, x-user-agent")
-				w.Header().Set("Access-Control-Expose-Headers", "grpc-status, grpc-message")
-			}
-
-			// Handle preflight requests
-			if r.Method == "OPTIONS" {
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-
-			// Check if this is a gRPC-Web request
-			if wrappedGrpc.IsGrpcWebRequest(r) {
-				// Handle client disconnection gracefully without logging errors
-				// This is normal behavior during hot reloads and page refreshes
-				defer func() {
-					if r := recover(); r != nil {
-						// Suppress panic from client disconnection
-						log.Printf("Debug: gRPC-Web request recovered from panic (client likely disconnected): %v", r)
-					}
-				}()
-
-				// Dynamic gRPC-Web proxy: route to managed processes
-				// Format: /proxy/{process_name}/{grpc_service_path}
-				if len(r.URL.Path) > 7 && r.URL.Path[:7] == "/proxy/" {
-					// Extract process name from path
-					pathParts := r.URL.Path[7:] // Remove "/proxy/"
-					slashIdx := -1
-					for i, ch := range pathParts {
-						if ch == '/' {
-							slashIdx = i
-							break
-						}
-					}
-
-					if slashIdx > 0 {
-						processName := pathParts[:slashIdx]
-						grpcPath := pathParts[slashIdx:] // Keep the leading /
-
-						// Use gRPC-Web proxy handler to forward to native gRPC backend
-						grpcProxyHandler.ProxyRequest(w, r, processName, grpcPath)
-						return
-					}
-				}
-
-				// Default: forward to gowinproc's own gRPC server
-				wrappedGrpc.ServeHTTP(w, r)
-				return
-			}
-			// Otherwise, use the regular HTTP mux
-			mux.ServeHTTP(w, r)
-		}),
-		ReadTimeout:  cfg.Server.ReadTimeout,
-		WriteTimeout: cfg.Server.WriteTimeout,
-		// Don't close idle connections too quickly - allow for hot reloads
-		IdleTimeout: 120 * time.Second,
-		// Disable HTTP/2 connection management that can cause issues with gRPC-Web
-		MaxHeaderBytes: 1 << 20,
-	}
-
 	// Initialize and start load balancers if configured
 	var lbManager *loadbalancer.Manager
 	if len(cfg.LoadBalancers) > 0 {
@@ -406,6 +339,91 @@ func main() {
 		if err := tunnelManager.Start(); err != nil {
 			log.Printf("Warning: Failed to start Cloudflare Tunnel: %v", err)
 		}
+	}
+
+	// Create base handler with CORS and gRPC-Web support
+	baseHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Add CORS headers for all requests
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, x-grpc-web, x-user-agent, Authorization")
+			w.Header().Set("Access-Control-Expose-Headers", "grpc-status, grpc-message")
+		}
+
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// Check if this is a gRPC-Web request
+		if wrappedGrpc.IsGrpcWebRequest(r) {
+			// Handle client disconnection gracefully without logging errors
+			// This is normal behavior during hot reloads and page refreshes
+			defer func() {
+				if r := recover(); r != nil {
+					// Suppress panic from client disconnection
+					log.Printf("Debug: gRPC-Web request recovered from panic (client likely disconnected): %v", r)
+				}
+			}()
+
+			// Dynamic gRPC-Web proxy: route to managed processes
+			// Format: /proxy/{process_name}/{grpc_service_path}
+			if len(r.URL.Path) > 7 && r.URL.Path[:7] == "/proxy/" {
+				// Extract process name from path
+				pathParts := r.URL.Path[7:] // Remove "/proxy/"
+				slashIdx := -1
+				for i, ch := range pathParts {
+					if ch == '/' {
+						slashIdx = i
+						break
+					}
+				}
+
+				if slashIdx > 0 {
+					processName := pathParts[:slashIdx]
+					grpcPath := pathParts[slashIdx:] // Keep the leading /
+
+					// Use gRPC-Web proxy handler to forward to native gRPC backend
+					grpcProxyHandler.ProxyRequest(w, r, processName, grpcPath)
+					return
+				}
+			}
+
+			// Default: forward to gowinproc's own gRPC server
+			wrappedGrpc.ServeHTTP(w, r)
+			return
+		}
+		// Otherwise, use the regular HTTP mux
+		mux.ServeHTTP(w, r)
+	})
+
+	// Wrap with tunnel authentication middleware if enabled
+	var finalHandler http.Handler = baseHandler
+	if tunnelManager != nil && cfg.Tunnel.RequireAuth {
+		authMiddleware := authmiddleware.NewTunnelAuthMiddleware(authmiddleware.Config{
+			RequireTunnel: cfg.Tunnel.RequireAuth,
+			GetAccessToken: func() string {
+				return tunnelManager.GetAccessToken()
+			},
+			WhitelistPaths: []string{"/health", "/favicon.ico"},
+		})
+		finalHandler = authMiddleware.Middleware(baseHandler)
+		log.Printf("Tunnel authentication middleware enabled")
+	}
+
+	// Create HTTP server with gRPC-Web support
+	httpServer := &http.Server{
+		Addr:    fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
+		Handler: finalHandler,
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
+		// Don't close idle connections too quickly - allow for hot reloads
+		IdleTimeout: 120 * time.Second,
+		// Disable HTTP/2 connection management that can cause issues with gRPC-Web
+		MaxHeaderBytes: 1 << 20,
 	}
 
 	// Start GitHub version poller if configured
