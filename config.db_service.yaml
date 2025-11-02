@@ -3,6 +3,15 @@ server:
   port: 8080
   grpc_port: 50051
 
+# Cloudflare Tunnel設定
+tunnel:
+  enabled: true
+  port: 8080
+  protocol: http2
+  client_id: gowinproc
+  worker_url: https://ohishi-auth.mtamaramu.com
+  private_key_path: ./keys/client_private.pem
+
 # db_service プロセス定義
 processes:
   # db_service - Local環境

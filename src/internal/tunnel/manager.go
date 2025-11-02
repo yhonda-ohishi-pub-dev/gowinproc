@@ -2,26 +2,20 @@ package tunnel
 
 import (
 	"bufio"
-	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/x509"
-	"encoding/base64"
-	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sync"
+	"syscall"
 	"time"
 
+	"github.com/yhonda-ohishi-pub-dev/go_auth/pkg/authclient"
+	"github.com/yhonda-ohishi-pub-dev/go_auth/pkg/keygen"
 	"github.com/yhonda-ohishi-pub-dev/gowinproc/src/pkg/models"
 )
 
@@ -79,6 +73,12 @@ func (m *Manager) Start() error {
 	}
 
 	m.cmd = exec.CommandContext(m.ctx, cloudflaredPath, args...)
+
+	// Windows: Hide console window for cloudflared
+	m.cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: 0x08000000, // CREATE_NO_WINDOW
+	}
 
 	// Set up output logging with URL extraction
 	stdoutPipe, err := m.cmd.StdoutPipe()
@@ -237,123 +237,37 @@ func (m *Manager) GetTunnelURL() string {
 	return m.tunnelURL
 }
 
-// registerTunnelURL registers the tunnel URL with Cloudflare Auth Worker
+// registerTunnelURL registers the tunnel URL with Cloudflare Auth Worker using go_auth library
 func (m *Manager) registerTunnelURL(tunnelURL string) {
 	log.Printf("[Tunnel] Registering tunnel URL with Auth Worker: %s", tunnelURL)
 
-	// Step 1: Authenticate and get token
-	token, err := m.authenticate()
-	if err != nil {
-		log.Printf("[Tunnel] ERROR: Failed to authenticate: %v", err)
-		return
-	}
-
-	// Step 2: Register tunnel URL
-	reqBody := map[string]string{
-		"clientId":  m.config.ClientID,
-		"tunnelUrl": tunnelURL,
-		"token":     token,
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		log.Printf("[Tunnel] ERROR: Failed to marshal request: %v", err)
-		return
-	}
-
-	registerURL := m.config.WorkerURL + "/tunnel/register"
-	resp, err := http.Post(registerURL, "application/json", bytes.NewBuffer(jsonData))
-	if err != nil {
-		log.Printf("[Tunnel] ERROR: Failed to register tunnel URL: %v", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		log.Printf("[Tunnel] ERROR: Failed to register tunnel URL (status %d): %s", resp.StatusCode, string(body))
-		return
-	}
-
-	log.Printf("[Tunnel] Successfully registered tunnel URL: %s", tunnelURL)
-}
-
-// authenticate performs RSA authentication with Cloudflare Auth Worker
-func (m *Manager) authenticate() (string, error) {
 	// Load private key
-	privateKey, err := loadPrivateKey(m.config.PrivateKeyPath)
+	privateKey, err := keygen.LoadPrivateKey(m.config.PrivateKeyPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to load private key: %w", err)
+		log.Printf("[Tunnel] ERROR: Failed to load private key: %v", err)
+		return
 	}
 
-	// Generate challenge
-	challenge := make([]byte, 32)
-	if _, err := rand.Read(challenge); err != nil {
-		return "", fmt.Errorf("failed to generate challenge: %w", err)
-	}
-	challengeB64 := base64.StdEncoding.EncodeToString(challenge)
-
-	// Sign challenge
-	hashed := sha256.Sum256(challenge)
-	signature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, 0, hashed[:])
+	// Create auth client with Tunnel URL
+	client, err := authclient.NewClient(authclient.ClientConfig{
+		BaseURL:    m.config.WorkerURL,
+		ClientID:   m.config.ClientID,
+		PrivateKey: privateKey,
+		TunnelUrl:  tunnelURL,
+	})
 	if err != nil {
-		return "", fmt.Errorf("failed to sign challenge: %w", err)
-	}
-	signatureB64 := base64.StdEncoding.EncodeToString(signature)
-
-	// Send authentication request
-	reqBody := map[string]string{
-		"clientId":  m.config.ClientID,
-		"challenge": challengeB64,
-		"signature": signatureB64,
+		log.Printf("[Tunnel] ERROR: Failed to create auth client: %v", err)
+		return
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	// Authenticate (this will register the Tunnel URL)
+	result, err := client.Authenticate()
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal auth request: %w", err)
+		log.Printf("[Tunnel] ERROR: Failed to authenticate and register: %v", err)
+		return
 	}
 
-	verifyURL := m.config.WorkerURL + "/verify"
-	resp, err := http.Post(verifyURL, "application/json", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", fmt.Errorf("failed to send auth request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("authentication failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
-	// Parse response to get token
-	var authResp struct {
-		Token string `json:"token"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
-		return "", fmt.Errorf("failed to decode auth response: %w", err)
-	}
-
-	return authResp.Token, nil
-}
-
-// loadPrivateKey loads an RSA private key from a PEM file
-func loadPrivateKey(path string) (*rsa.PrivateKey, error) {
-	keyData, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read private key file: %w", err)
-	}
-
-	block, _ := pem.Decode(keyData)
-	if block == nil {
-		return nil, fmt.Errorf("failed to decode PEM block")
-	}
-
-	privateKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse private key: %w", err)
-	}
-
-	return privateKey, nil
+	log.Printf("[Tunnel] Successfully registered tunnel URL: %s (token: %s)", tunnelURL, result.Token)
 }
 
 // tunnelLogger is a simple logger for cloudflared output
