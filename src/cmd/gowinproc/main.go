@@ -358,6 +358,12 @@ func main() {
 			return
 		}
 
+		// Route /api/grpc/registry and /api/grpc/invoke to HTTP mux (before gRPC-Web check)
+		if r.URL.Path == "/api/grpc/registry" || r.URL.Path == "/api/grpc/invoke" {
+			mux.ServeHTTP(w, r)
+			return
+		}
+
 		// Check if this is a gRPC-Web request
 		if wrappedGrpc.IsGrpcWebRequest(r) {
 			// Handle client disconnection gracefully without logging errors
