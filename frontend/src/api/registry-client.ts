@@ -11,7 +11,7 @@ export const registryApi = {
    * 利用可能なgRPCプロセス一覧を取得
    */
   async fetchRegistry(): Promise<RegistryResponse> {
-    const response = await fetch(`${REGISTRY_API_BASE}/api/grpc/registry`)
+    const response = await fetch(`${REGISTRY_API_BASE}/api/registry`)
 
     if (!response.ok) {
       throw new Error(`Failed to fetch registry: ${response.statusText}`)

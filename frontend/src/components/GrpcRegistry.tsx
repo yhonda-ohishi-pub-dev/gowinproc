@@ -159,8 +159,8 @@ function ProcessCard({ process }: { process: ProcessInfo }) {
         throw new Error('Invalid JSON: ' + (e instanceof Error ? e.message : 'Unknown error'))
       }
 
-      // grpcurlベースの /api/grpc/invoke エンドポイントを使用
-      const response = await fetch('http://127.0.0.1:8080/api/grpc/invoke', {
+      // grpcurlベースの /api/invoke エンドポイントを使用
+      const response = await fetch('http://127.0.0.1:8080/api/invoke', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

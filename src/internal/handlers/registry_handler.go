@@ -126,9 +126,12 @@ func (h *RegistryHandler) GetRegistry(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Get gRPC services and message schemas from reflection (with caching)
+		// Skip reflection for db_service and desktop_server processes
 		var services []ServiceDetail
 		var messages map[string]MessageDetail
-		if runningCount > 0 && len(ports) > 0 {
+		isDBService := len(procName) >= 10 && procName[:10] == "db_service"
+		isDesktopServer := procName == "desktop_server"
+		if runningCount > 0 && len(ports) > 0 && !isDBService && !isDesktopServer {
 			cachedInfo := h.getServicesWithCache(procName, ports[0])
 			if cachedInfo != nil {
 				services = cachedInfo.Services
@@ -201,6 +204,11 @@ func (h *RegistryHandler) getServicesWithCache(processName string, port int) *Ca
 	// Convert map[string][]reflection.MethodDetail to []ServiceDetail
 	var services []ServiceDetail
 	for serviceName, reflectionMethods := range serviceInfo.Services {
+		// Skip db_service.* services
+		if len(serviceName) >= 11 && serviceName[:11] == "db_service." {
+			continue
+		}
+
 		// Convert []reflection.MethodDetail to []MethodDetail
 		methods := make([]MethodDetail, len(reflectionMethods))
 		for i, rm := range reflectionMethods {
@@ -219,6 +227,11 @@ func (h *RegistryHandler) getServicesWithCache(processName string, port int) *Ca
 	// Convert reflection message schemas to handler message schemas
 	messages := make(map[string]MessageDetail)
 	for msgName, reflectionMsg := range serviceInfo.Messages {
+		// Skip .db_service.* messages
+		if len(msgName) >= 12 && msgName[:12] == ".db_service." {
+			continue
+		}
+
 		// Convert []reflection.FieldDetail to []FieldDetail
 		fields := make([]FieldDetail, len(reflectionMsg.Fields))
 		for i, rf := range reflectionMsg.Fields {

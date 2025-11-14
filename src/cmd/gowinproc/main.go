@@ -292,11 +292,11 @@ func main() {
 
 	// gRPC レジストリエンドポイント - プロキシ可能なプロセス一覧を返す
 	registryHandler := handlers.NewRegistryHandler(processManager, cfg.Server.Host, cfg.Server.Port)
-	mux.HandleFunc("/api/grpc/registry", registryHandler.GetRegistry)
+	mux.HandleFunc("/api/registry", registryHandler.GetRegistry)
 
 	// gRPC Invokeエンドポイント - JSON経由でgRPCメソッドを実行
 	grpcInvokeHandler := handlers.NewGrpcInvokeHandler(processManager)
-	mux.HandleFunc("/api/grpc/invoke", grpcInvokeHandler.InvokeMethod)
+	mux.HandleFunc("/api/invoke", grpcInvokeHandler.InvokeMethod)
 
 	// gRPC-Web プロキシハンドラー - ネイティブgRPCバックエンドへのプロキシ
 	grpcProxyHandler := handlers.NewGrpcProxyHandler(processManager)
@@ -358,8 +358,8 @@ func main() {
 			return
 		}
 
-		// Route /api/grpc/registry and /api/grpc/invoke to HTTP mux (before gRPC-Web check)
-		if r.URL.Path == "/api/grpc/registry" || r.URL.Path == "/api/grpc/invoke" {
+		// Route /api/registry and /api/invoke to HTTP mux (before gRPC-Web check)
+		if r.URL.Path == "/api/registry" || r.URL.Path == "/api/invoke" {
 			mux.ServeHTTP(w, r)
 			return
 		}
