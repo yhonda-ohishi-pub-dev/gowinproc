@@ -86,6 +86,14 @@ processes:
     health_check:
       enabled: false  # gRPCサーバーのためHTTPヘルスチェック無効
 
+  # etc_data_processor - ETCデータ処理サービス
+  - name: etc_data_processor
+    repository: yhonda-ohishi-pub-dev/etc_data_processor
+    max_instances: 1
+    auto_restart: true
+    health_check:
+      enabled: false  # gRPCサーバーのためHTTPヘルスチェック無効
+
   # desktop-server - システムトレイアプリ（フロントエンド埋め込み）
   - name: desktop_server
     repository: yhonda-ohishi-pub-dev/desktop-server

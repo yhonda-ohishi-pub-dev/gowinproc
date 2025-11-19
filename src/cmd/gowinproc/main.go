@@ -165,12 +165,9 @@ func main() {
 
 	// Get GitHub token from Cloudflare, flag, or environment
 	token := *githubToken
-	if token == "" {
-		token = os.Getenv("GITHUB_TOKEN")
-	}
 
-	// Try to get GITHUB_TOKEN from Cloudflare if in cloudflare mode and token is still empty
-	if token == "" && cfg.Secrets.Mode == "cloudflare" {
+	// If in cloudflare mode, always fetch from Cloudflare (highest priority)
+	if cfg.Secrets.Mode == "cloudflare" {
 		log.Printf("Fetching GITHUB_TOKEN from Cloudflare...")
 		authClient, err := cloudflare.NewAuthClient(
 			cfg.Secrets.Cloudflare.WorkerURL,
@@ -190,6 +187,9 @@ func main() {
 				log.Printf("Warning: Failed to fetch secrets from Cloudflare: %v", err)
 			}
 		}
+	} else if token == "" {
+		// Fallback to environment variable if not in cloudflare mode
+		token = os.Getenv("GITHUB_TOKEN")
 	}
 
 	if token != "" {
@@ -218,6 +218,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create update manager: %v", err)
 	}
+	processManager.SetUpdateManager(updateManager)
 	log.Printf("Update manager initialized (binaries: %s)", *binariesDir)
 
 	// Start configured processes
@@ -484,6 +485,7 @@ func main() {
 			cfg.GitHub.UpdateMode.Polling.Interval,
 			updateManager,
 			pollerProcs,
+			token, // Pass GitHub token for authentication
 		)
 		githubPoller.Start()
 	}

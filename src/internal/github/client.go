@@ -52,7 +52,13 @@ func (c *Client) GetLatestRelease(repo string) (*models.Version, error) {
 	}
 
 	if c.token != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("token %s", c.token))
+		// Fine-grained tokens start with "github_pat_" and use "Bearer" auth
+		// Classic tokens start with "ghp_" and use "token" auth
+		authScheme := "token"
+		if len(c.token) > 11 && c.token[:11] == "github_pat_" {
+			authScheme = "Bearer"
+		}
+		req.Header.Set("Authorization", fmt.Sprintf("%s %s", authScheme, c.token))
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
@@ -61,6 +67,23 @@ func (c *Client) GetLatestRelease(repo string) (*models.Version, error) {
 		return nil, fmt.Errorf("failed to fetch release: %w", err)
 	}
 	defer resp.Body.Close()
+
+	// If we got 401 and have a token, retry without authentication for public repos
+	if resp.StatusCode == http.StatusUnauthorized && c.token != "" {
+		resp.Body.Close()
+
+		req, err = http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+		resp, err = c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch release without auth: %w", err)
+		}
+		defer resp.Body.Close()
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -90,7 +113,13 @@ func (c *Client) GetRelease(repo, tag string) (*models.Version, error) {
 	}
 
 	if c.token != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("token %s", c.token))
+		// Fine-grained tokens start with "github_pat_" and use "Bearer" auth
+		// Classic tokens start with "ghp_" and use "token" auth
+		authScheme := "token"
+		if len(c.token) > 11 && c.token[:11] == "github_pat_" {
+			authScheme = "Bearer"
+		}
+		req.Header.Set("Authorization", fmt.Sprintf("%s %s", authScheme, c.token))
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
@@ -99,6 +128,23 @@ func (c *Client) GetRelease(repo, tag string) (*models.Version, error) {
 		return nil, fmt.Errorf("failed to fetch release: %w", err)
 	}
 	defer resp.Body.Close()
+
+	// If we got 401 and have a token, retry without authentication for public repos
+	if resp.StatusCode == http.StatusUnauthorized && c.token != "" {
+		resp.Body.Close()
+
+		req, err = http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+		resp, err = c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch release without auth: %w", err)
+		}
+		defer resp.Body.Close()
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -123,7 +169,13 @@ func (c *Client) ListReleases(repo string, limit int) ([]models.Version, error) 
 	}
 
 	if c.token != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("token %s", c.token))
+		// Fine-grained tokens start with "github_pat_" and use "Bearer" auth
+		// Classic tokens start with "ghp_" and use "token" auth
+		authScheme := "token"
+		if len(c.token) > 11 && c.token[:11] == "github_pat_" {
+			authScheme = "Bearer"
+		}
+		req.Header.Set("Authorization", fmt.Sprintf("%s %s", authScheme, c.token))
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
@@ -132,6 +184,23 @@ func (c *Client) ListReleases(repo string, limit int) ([]models.Version, error) 
 		return nil, fmt.Errorf("failed to fetch releases: %w", err)
 	}
 	defer resp.Body.Close()
+
+	// If we got 401 and have a token, retry without authentication for public repos
+	if resp.StatusCode == http.StatusUnauthorized && c.token != "" {
+		resp.Body.Close()
+
+		req, err = http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+		resp, err = c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch releases without auth: %w", err)
+		}
+		defer resp.Body.Close()
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

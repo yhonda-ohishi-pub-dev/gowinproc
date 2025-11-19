@@ -109,10 +109,21 @@ func (m *Manager) performUpdate(processName, targetVersion string, force bool) {
 	}
 	log.Printf("[Update] Target version info for %s: %s", processName, targetVersionInfo.Tag)
 
-	// Check if already on target version
+	// Check if already on target version AND binary file exists
 	currentVersion, _ := m.versionManager.GetCurrentVersion(processName)
-	if currentVersion != nil && currentVersion.Tag == targetVersionInfo.Tag && !force {
-		log.Printf("[Update] %s already on target version %s, skipping", processName, targetVersionInfo.Tag)
+	binaryExists := false
+	if currentVersion != nil && currentVersion.Tag == targetVersionInfo.Tag {
+		// Verify that the binary file actually exists
+		expectedBinaryPath := m.getBinaryPathForRepository(repository, currentVersion.Tag)
+		if _, err := os.Stat(expectedBinaryPath); err == nil {
+			binaryExists = true
+		} else {
+			log.Printf("[Update] Version tracking shows %s but binary not found at %s, will re-download", currentVersion.Tag, expectedBinaryPath)
+		}
+	}
+
+	if currentVersion != nil && currentVersion.Tag == targetVersionInfo.Tag && binaryExists && !force {
+		log.Printf("[Update] %s already on target version %s and binary exists, skipping", processName, targetVersionInfo.Tag)
 		status.Stage = "completed"
 		status.Message = "Already on target version"
 		status.Progress = 100
@@ -120,7 +131,7 @@ func (m *Manager) performUpdate(processName, targetVersion string, force bool) {
 		m.setUpdateStatus(processName, status)
 		return
 	}
-	log.Printf("[Update] Current version for %s: %v, target: %s", processName, currentVersion, targetVersionInfo.Tag)
+	log.Printf("[Update] Current version for %s: %v, target: %s, binary exists: %v", processName, currentVersion, targetVersionInfo.Tag, binaryExists)
 
 	// Stage 2: Download new binary (with repository-level locking)
 	status.Stage = "downloading"
@@ -219,7 +230,21 @@ func (m *Manager) performUpdate(processName, targetVersion string, force bool) {
 			}
 		}
 	}
-	log.Printf("[Update] Stopped %d old instances for %s", stoppedCount, processName)
+	log.Printf("[Update] Stopped %d old instances from tracking list for %s", stoppedCount, processName)
+
+	// Stage 4.5: Fallback cleanup - Stop any old processes by binary name that aren't in the tracking list
+	// This catches orphaned processes that were removed from the tracking list before Hot Deploy
+	log.Printf("[Update] Running fallback cleanup to stop any orphaned %s processes (excluding PID %d)", processName, newInstance.PID)
+	additionalStopped, err := m.processManager.StopProcessesByBinaryName(repository, newInstance.PID, gracefulTimeout)
+	if err != nil {
+		log.Printf("[Update] Warning: fallback cleanup failed: %v", err)
+	} else if additionalStopped > 0 {
+		log.Printf("[Update] ✅ Fallback cleanup stopped %d additional orphaned processes", additionalStopped)
+		stoppedCount += additionalStopped
+	} else {
+		log.Printf("[Update] Fallback cleanup found no additional processes to stop")
+	}
+	log.Printf("[Update] Total stopped: %d old instances for %s", stoppedCount, processName)
 
 	// Stage 5: Update version tracking
 	status.Stage = "updating_version"

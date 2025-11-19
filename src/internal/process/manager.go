@@ -3,6 +3,7 @@ package process
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -29,6 +30,7 @@ type Manager struct {
 	certManager    *certs.Manager
 	secretManager  *secrets.Manager
 	versionManager VersionManager
+	updateManager  UpdateManager
 	pidTracker     *PIDTracker // Tracks PIDs for cleanup
 	nextPort       int         // Next port to try for auto-allocation
 	mu             sync.RWMutex
@@ -41,6 +43,12 @@ type VersionManager interface {
 	GetVersion(repository, tag string) (*models.Version, error)
 	DownloadVersion(version *models.Version, destPath string, progressCallback func(downloaded, total int64)) error
 	SetCurrentVersion(processName string, version *models.Version) error
+}
+
+// UpdateManager interface for update operations
+type UpdateManager interface {
+	UpdateProcess(processName, targetVersion string, force bool) error
+	GetUpdateStatus(processName string) (*models.UpdateStatus, bool)
 }
 
 // NewManager creates a new process manager
@@ -62,6 +70,11 @@ func NewManager(config *models.Config, certMgr *certs.Manager, secretMgr *secret
 // SetVersionManager sets the version manager for binary downloads
 func (m *Manager) SetVersionManager(versionMgr VersionManager) {
 	m.versionManager = versionMgr
+}
+
+// SetUpdateManager sets the update manager for automatic downloads
+func (m *Manager) SetUpdateManager(updateMgr UpdateManager) {
+	m.updateManager = updateMgr
 }
 
 // Initialize initializes all configured processes
@@ -244,10 +257,49 @@ func (m *Manager) StartProcessWithOptions(processName string, allowExceedMax boo
 		// Auto-detect latest binary from binaries directory
 		detected, err := m.detectLatestBinary(processName, managedProc.Config.Repository)
 		if err != nil {
-			return nil, fmt.Errorf("failed to detect binary: %w", err)
+			// Binary not found - try to download latest version from GitHub
+			log.Printf("No binary found for %s, attempting to download latest version from GitHub...", processName)
+
+			if m.updateManager != nil {
+				// Download latest version
+				if err := m.updateManager.UpdateProcess(processName, "", false); err != nil {
+					return nil, fmt.Errorf("failed to download binary: %w", err)
+				}
+
+				// Wait for download to complete (check every 500ms for up to 60 seconds)
+				for i := 0; i < 120; i++ {
+					time.Sleep(500 * time.Millisecond)
+
+					// Try to detect binary again
+					detected, err = m.detectLatestBinary(processName, managedProc.Config.Repository)
+					if err == nil {
+						binaryPath = detected
+						log.Printf("Successfully downloaded and detected binary for %s: %s", processName, binaryPath)
+						break
+					}
+
+					// Check if download failed
+					if status, exists := m.updateManager.GetUpdateStatus(processName); exists && status.Completed {
+						if status.Stage == "failed" {
+							return nil, fmt.Errorf("failed to download binary: %s", status.Error)
+						}
+						// Download completed but binary still not detected - wait a bit more
+						if i >= 119 {
+							return nil, fmt.Errorf("binary download completed but file not found")
+						}
+					}
+				}
+
+				if binaryPath == "" {
+					return nil, fmt.Errorf("timeout waiting for binary download")
+				}
+			} else {
+				return nil, fmt.Errorf("failed to detect binary: %w (update manager not available for auto-download)", err)
+			}
+		} else {
+			binaryPath = detected
+			log.Printf("Auto-detected binary for %s: %s", processName, binaryPath)
 		}
-		binaryPath = detected
-		log.Printf("Auto-detected binary for %s: %s", processName, binaryPath)
 	}
 
 	// Extract and record version from binary filename if version manager is set
@@ -548,6 +600,100 @@ func (m *Manager) StopAllInstances(processName string) error {
 	}
 
 	return nil
+}
+
+// StopProcessesByBinaryName finds and stops all processes matching a binary name pattern,
+// excluding the specified PID (typically the new instance during Hot Deploy)
+func (m *Manager) StopProcessesByBinaryName(repository string, excludePID int, gracefulTimeout time.Duration) (int, error) {
+	// Extract binary name from repository (e.g., "owner/repo" -> "repo")
+	binaryName := filepath.Base(repository)
+	binaryPattern := fmt.Sprintf("%s.exe", binaryName)
+
+	log.Printf("[Process Manager] Searching for processes matching binary pattern: %s (excluding PID %d)", binaryPattern, excludePID)
+
+	// Use PowerShell to find all processes matching the binary name
+	cmd := exec.Command("powershell", "-Command",
+		fmt.Sprintf("Get-Process | Where-Object { $_.Path -like '*\\%s' } | Select-Object -Property Id,Path | ConvertTo-Json", binaryPattern))
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// If no processes found, PowerShell returns error - this is okay
+		log.Printf("[Process Manager] No processes found matching pattern %s", binaryPattern)
+		return 0, nil
+	}
+
+	// Parse JSON output
+	type ProcessInfo struct {
+		ID   int    `json:"Id"`
+		Path string `json:"Path"`
+	}
+
+	var processes []ProcessInfo
+	// Handle both single process (object) and multiple processes (array)
+	if err := json.Unmarshal(output, &processes); err != nil {
+		// Try single process
+		var single ProcessInfo
+		if err2 := json.Unmarshal(output, &single); err2 != nil {
+			log.Printf("[Process Manager] Failed to parse process list: %v, output: %s", err, string(output))
+			return 0, nil
+		}
+		processes = []ProcessInfo{single}
+	}
+
+	stoppedCount := 0
+	for _, proc := range processes {
+		if proc.ID == excludePID {
+			log.Printf("[Process Manager] Skipping PID %d (new instance)", proc.ID)
+			continue
+		}
+
+		log.Printf("[Process Manager] Found old process: PID=%d, Path=%s", proc.ID, proc.Path)
+
+		// Try graceful shutdown first
+		gracefullyStopped := false
+		if gracefulTimeout > 0 {
+			log.Printf("[Process Manager] Attempting graceful shutdown of PID %d (timeout: %v)", proc.ID, gracefulTimeout)
+
+			// Send termination signal and wait
+			killCmd := exec.Command("powershell", "-Command",
+				fmt.Sprintf("Stop-Process -Id %d -ErrorAction SilentlyContinue", proc.ID))
+			if err := killCmd.Run(); err == nil {
+				// Wait for process to exit
+				deadline := time.Now().Add(gracefulTimeout)
+				for time.Now().Before(deadline) {
+					checkCmd := exec.Command("powershell", "-Command",
+						fmt.Sprintf("Get-Process -Id %d -ErrorAction SilentlyContinue", proc.ID))
+					if err := checkCmd.Run(); err != nil {
+						// Process no longer exists
+						log.Printf("[Process Manager] PID %d stopped gracefully", proc.ID)
+						stoppedCount++
+						gracefullyStopped = true
+						break
+					}
+					time.Sleep(500 * time.Millisecond)
+				}
+				if !gracefullyStopped {
+					log.Printf("[Process Manager] PID %d did not stop within timeout, forcing kill", proc.ID)
+				}
+			}
+		}
+
+		// Force kill if graceful shutdown failed or no timeout specified
+		if !gracefullyStopped {
+			log.Printf("[Process Manager] Force killing PID %d", proc.ID)
+			forceKillCmd := exec.Command("powershell", "-Command",
+				fmt.Sprintf("Stop-Process -Id %d -Force -ErrorAction SilentlyContinue", proc.ID))
+			if err := forceKillCmd.Run(); err != nil {
+				log.Printf("[Process Manager] Warning: Failed to kill PID %d: %v", proc.ID, err)
+			} else {
+				log.Printf("[Process Manager] PID %d force killed", proc.ID)
+				stoppedCount++
+			}
+		}
+	}
+
+	log.Printf("[Process Manager] Stopped %d old processes for binary pattern %s", stoppedCount, binaryPattern)
+	return stoppedCount, nil
 }
 
 // GetProcessStatus returns the status of all instances of a process

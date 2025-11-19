@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"sync"
@@ -17,6 +18,7 @@ type GitHubPoller struct {
 	interval      time.Duration
 	updateManager *update.Manager
 	processes     []ProcessConfig
+	githubToken   string
 	httpClient    *http.Client
 	ctx           context.Context
 	cancel        context.CancelFunc
@@ -37,13 +39,14 @@ type GitHubRelease struct {
 }
 
 // NewGitHubPoller creates a new GitHub version poller
-func NewGitHubPoller(interval time.Duration, updateMgr *update.Manager, processes []ProcessConfig) *GitHubPoller {
+func NewGitHubPoller(interval time.Duration, updateMgr *update.Manager, processes []ProcessConfig, githubToken string) *GitHubPoller {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &GitHubPoller{
 		interval:      interval,
 		updateManager: updateMgr,
 		processes:     processes,
+		githubToken:   githubToken,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -108,6 +111,16 @@ func (p *GitHubPoller) pollProcess(proc ProcessConfig) error {
 	}
 
 	// Set GitHub API headers
+	log.Printf("[GitHub Poller] Token length: %d, starts with github_pat_: %v", len(p.githubToken), len(p.githubToken) > 11 && p.githubToken[:11] == "github_pat_")
+	if p.githubToken != "" {
+		// Fine-grained tokens start with "github_pat_" and use "Bearer" auth
+		// Classic tokens start with "ghp_" and use "token" auth
+		authScheme := "token"
+		if len(p.githubToken) > 11 && p.githubToken[:11] == "github_pat_" {
+			authScheme = "Bearer"
+		}
+		req.Header.Set("Authorization", fmt.Sprintf("%s %s", authScheme, p.githubToken))
+	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "gowinproc")
 
@@ -124,7 +137,8 @@ func (p *GitHubPoller) pollProcess(proc ProcessConfig) error {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var release GitHubRelease
