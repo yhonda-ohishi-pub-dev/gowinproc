@@ -500,7 +500,7 @@ func main() {
 	log.Println("Starting system tray icon...")
 
 	restAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	trayManager := systray.NewManager(restAddr, grpcAddr, func() {
+	trayManager := systray.NewManager(restAddr, grpcAddr, tunnelManager, func() {
 		// Quit callback from system tray
 		sigChan <- syscall.SIGTERM
 	})

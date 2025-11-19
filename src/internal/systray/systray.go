@@ -6,23 +6,34 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/getlantern/systray"
 )
 
+// TunnelURLGetter is an interface to get tunnel URL from tunnel manager
+type TunnelURLGetter interface {
+	GetTunnelURL() string
+}
+
 // Manager handles system tray icon and menu
 type Manager struct {
-	restAddr string
-	grpcAddr string
-	onQuit   func()
+	restAddr      string
+	grpcAddr      string
+	onQuit        func()
+	tunnelGetter  TunnelURLGetter
+	tunnelURLItem *systray.MenuItem
+	mu            sync.RWMutex
 }
 
 // NewManager creates a new system tray manager
-func NewManager(restAddr, grpcAddr string, onQuit func()) *Manager {
+func NewManager(restAddr, grpcAddr string, tunnelGetter TunnelURLGetter, onQuit func()) *Manager {
 	return &Manager{
-		restAddr: restAddr,
-		grpcAddr: grpcAddr,
-		onQuit:   onQuit,
+		restAddr:     restAddr,
+		grpcAddr:     grpcAddr,
+		tunnelGetter: tunnelGetter,
+		onQuit:       onQuit,
 	}
 }
 
@@ -62,6 +73,34 @@ func (m *Manager) onReady() {
 	mGRPCAddr := systray.AddMenuItem(fmt.Sprintf("gRPC: %s", m.grpcAddr), "gRPC API Address")
 	mGRPCAddr.Disable()
 
+	// Add Tunnel URL menu item if tunnel manager is available
+	var mTunnelURL *systray.MenuItem
+	var mCopyTunnelURL *systray.MenuItem
+	if m.tunnelGetter != nil {
+		systray.AddSeparator()
+
+		tunnelURL := m.tunnelGetter.GetTunnelURL()
+		if tunnelURL != "" {
+			mTunnelURL = systray.AddMenuItem(fmt.Sprintf("Tunnel: %s", tunnelURL), "Cloudflare Tunnel URL")
+			mTunnelURL.Disable()
+
+			mCopyTunnelURL = systray.AddMenuItem("Copy Tunnel URL", "Copy tunnel URL to clipboard")
+		} else {
+			mTunnelURL = systray.AddMenuItem("Tunnel: Waiting...", "Cloudflare Tunnel URL (waiting for connection)")
+			mTunnelURL.Disable()
+
+			mCopyTunnelURL = systray.AddMenuItem("Copy Tunnel URL", "Copy tunnel URL to clipboard")
+			mCopyTunnelURL.Disable()
+		}
+
+		m.mu.Lock()
+		m.tunnelURLItem = mTunnelURL
+		m.mu.Unlock()
+
+		// Start polling for tunnel URL updates
+		go m.pollTunnelURL(mTunnelURL, mCopyTunnelURL)
+	}
+
 	systray.AddSeparator()
 
 	mOpenDashboard := systray.AddMenuItem("Open Dashboard", "Open web dashboard in browser")
@@ -79,6 +118,13 @@ func (m *Manager) onReady() {
 				m.openDashboard()
 			case <-mOpenLogs.ClickedCh:
 				m.openLogs()
+			case <-mCopyTunnelURL.ClickedCh:
+				if m.tunnelGetter != nil {
+					tunnelURL := m.tunnelGetter.GetTunnelURL()
+					if tunnelURL != "" {
+						m.copyToClipboard(tunnelURL)
+					}
+				}
 			case <-mQuit.ClickedCh:
 				log.Println("Quit menu clicked")
 				if m.onQuit != nil {
@@ -115,6 +161,46 @@ func (m *Manager) openLogs() {
 	if err := cmd.Start(); err != nil {
 		log.Printf("Failed to open logs directory: %v", err)
 	}
+}
+
+// pollTunnelURL polls for tunnel URL updates and updates the menu item
+func (m *Manager) pollTunnelURL(urlItem, copyItem *systray.MenuItem) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	lastURL := ""
+	for range ticker.C {
+		if m.tunnelGetter == nil {
+			return
+		}
+
+		currentURL := m.tunnelGetter.GetTunnelURL()
+		if currentURL != lastURL {
+			lastURL = currentURL
+
+			if currentURL != "" {
+				urlItem.SetTitle(fmt.Sprintf("Tunnel: %s", currentURL))
+				urlItem.SetTooltip("Cloudflare Tunnel URL")
+				copyItem.Enable()
+				log.Printf("[SysTray] Tunnel URL updated: %s", currentURL)
+			} else {
+				urlItem.SetTitle("Tunnel: Waiting...")
+				urlItem.SetTooltip("Cloudflare Tunnel URL (waiting for connection)")
+				copyItem.Disable()
+			}
+		}
+	}
+}
+
+// copyToClipboard copies text to Windows clipboard using PowerShell
+func (m *Manager) copyToClipboard(text string) {
+	// Use PowerShell to copy to clipboard on Windows
+	cmd := exec.Command("powershell", "-Command", fmt.Sprintf("Set-Clipboard -Value '%s'", text))
+	if err := cmd.Run(); err != nil {
+		log.Printf("Failed to copy to clipboard: %v", err)
+		return
+	}
+	log.Printf("[SysTray] Copied to clipboard: %s", text)
 }
 
 // getFallbackIcon returns a proper ICO format icon for Windows system tray

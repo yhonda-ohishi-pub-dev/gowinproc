@@ -108,8 +108,9 @@ func (c *Client) GetServiceInfo(ctx context.Context, address string) (*ServiceIn
 	for _, service := range serviceList.ListServicesResponse.Service {
 		serviceName := service.Name
 
-		// Skip reflection service itself
-		if serviceName == "grpc.reflection.v1alpha.ServerReflection" {
+		// Skip reflection services (both v1 and v1alpha)
+		if serviceName == "grpc.reflection.v1alpha.ServerReflection" ||
+		   serviceName == "grpc.reflection.v1.ServerReflection" {
 			continue
 		}
 
@@ -321,7 +322,9 @@ func (c *Client) GetSimpleServiceList(ctx context.Context, address string) ([]st
 
 	var services []string
 	for _, service := range serviceList.ListServicesResponse.Service {
-		if service.Name != "grpc.reflection.v1alpha.ServerReflection" {
+		// Skip reflection services (both v1 and v1alpha)
+		if service.Name != "grpc.reflection.v1alpha.ServerReflection" &&
+		   service.Name != "grpc.reflection.v1.ServerReflection" {
 			services = append(services, service.Name)
 		}
 	}
