@@ -91,6 +91,8 @@ processes:
     repository: yhonda-ohishi-pub-dev/desktop-server
     max_instances: 1
     auto_restart: true
+    env:
+      HTTP_PORT: "8081"  # gowinprocのポート8080と競合しないように別ポートを使用
     health_check:
       enabled: false  # HTTPヘルスチェック無効
 

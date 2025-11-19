@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package tunnel;
+
+option go_package = "github.com/yhonda-ohishi-pub-dev/gowinproc/src/internal/proto";
+
+// TunnelService provides gRPC-Web endpoints for tunnel management
+service TunnelService {
+  // GetRegistry returns the registry of available processes and services
+  rpc GetRegistry(TunnelRegistryRequest) returns (TunnelRegistryResponse);
+
+  // InvokeMethod invokes a gRPC method on a managed process
+  rpc InvokeMethod(TunnelInvokeRequest) returns (TunnelInvokeResponse);
+}
+
+// TunnelRegistryRequest is an empty request for getting the registry
+message TunnelRegistryRequest {}
+
+// TunnelRegistryResponse contains the registry information
+message TunnelRegistryResponse {
+  string proxy_base_url = 1;
+  repeated TunnelProcessInfo available_processes = 2;
+  string timestamp = 3;
+}
+
+// TunnelProcessInfo represents information about a managed process
+message TunnelProcessInfo {
+  string name = 1;
+  string display_name = 2;
+  string status = 3;
+  int32 instances = 4;
+  string proxy_path = 5;
+  string repository = 6;
+  repeated int32 current_ports = 7;
+  repeated ServiceDetail services = 8;
+  map<string, MessageDetail> messages = 9;
+}
+
+// ServiceDetail represents a gRPC service with its methods
+message ServiceDetail {
+  string name = 1;
+  repeated MethodDetail methods = 2;
+}
+
+// MethodDetail represents a gRPC method
+message MethodDetail {
+  string name = 1;
+  string input_type = 2;
+  string output_type = 3;
+}
+
+// MessageDetail represents a protobuf message schema
+message MessageDetail {
+  string name = 1;
+  repeated FieldDetail fields = 2;
+}
+
+// FieldDetail represents a field in a message
+message FieldDetail {
+  string name = 1;
+  string type = 2;
+  bool repeated = 3;
+  int32 number = 4;
+  bool optional = 5;
+}
+
+// TunnelInvokeRequest represents a gRPC method invocation request
+message TunnelInvokeRequest {
+  string process = 1;  // Process name (e.g., "db_service_local")
+  string service = 2;  // Service name (e.g., "db_service.db_ChiikiMasterService")
+  string method = 3;   // Method name (e.g., "List")
+  string data = 4;     // Request data as JSON string
+}
+
+// TunnelInvokeResponse represents a gRPC method invocation response
+message TunnelInvokeResponse {
+  bool success = 1;
+  string data = 2;     // Response data as JSON string
+  string error = 3;
+}

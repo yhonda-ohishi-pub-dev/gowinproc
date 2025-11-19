@@ -258,6 +258,14 @@ func main() {
 	grpcServiceServer := grpcserver.NewServer(processManager, updateManager, repositoryList)
 	pb.RegisterProcessManagerServer(grpcSrv, grpcServiceServer)
 
+	// Register TunnelService (for gRPC-Web access via Cloudflare Tunnel)
+	// These handlers are already created below for HTTP endpoints
+	// We'll initialize them here to use in TunnelService
+	registryHandlerForTunnel := handlers.NewRegistryHandler(processManager, cfg.Server.Host, cfg.Server.Port)
+	invokeHandlerForTunnel := handlers.NewGrpcInvokeHandler(processManager)
+	tunnelServiceServer := grpcserver.NewTunnelServiceServer(registryHandlerForTunnel, invokeHandlerForTunnel)
+	pb.RegisterTunnelServiceServer(grpcSrv, tunnelServiceServer)
+
 	// Wrap gRPC server with gRPC-Web
 	wrappedGrpc := grpcweb.WrapServer(grpcSrv,
 		grpcweb.WithCorsForRegisteredEndpointsOnly(false),

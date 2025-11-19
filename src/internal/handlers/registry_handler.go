@@ -99,6 +99,21 @@ func (h *RegistryHandler) GetRegistry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	response := h.GetRegistryData()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// GetRegistryData returns the registry data (used by both HTTP and gRPC handlers)
+func (h *RegistryHandler) GetRegistryData() RegistryResponse {
 	// Get all processes from ProcessManager
 	allProcesses := h.processManager.ListProcesses()
 	availableProcesses := []ProcessInfo{}
@@ -154,20 +169,10 @@ func (h *RegistryHandler) GetRegistry(w http.ResponseWriter, r *http.Request) {
 		availableProcesses = append(availableProcesses, processInfo)
 	}
 
-	response := RegistryResponse{
+	return RegistryResponse{
 		ProxyBaseURL:       h.baseURL,
 		AvailableProcesses: availableProcesses,
 		Timestamp:          time.Now(),
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-		return
 	}
 }
 

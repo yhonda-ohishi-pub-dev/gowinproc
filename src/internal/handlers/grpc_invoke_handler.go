@@ -150,3 +150,36 @@ func (h *GrpcInvokeHandler) sendError(w http.ResponseWriter, message string, sta
 	})
 	log.Printf("gRPC invoke error: %s", message)
 }
+
+// InvokeMethodDirect invokes a gRPC method and returns the result directly (used by gRPC service)
+func (h *GrpcInvokeHandler) InvokeMethodDirect(ctx context.Context, req *InvokeRequest) (*InvokeResponse, error) {
+	// Validate request
+	if req.Process == "" || req.Service == "" || req.Method == "" {
+		return nil, fmt.Errorf("missing required fields: process, service, method")
+	}
+
+	// Get process port
+	instances, err := h.processManager.GetProcessStatus(req.Process)
+	if err != nil || len(instances) == 0 || instances[0].Port <= 0 {
+		return nil, fmt.Errorf("process %s is not running", req.Process)
+	}
+
+	port := instances[0].Port
+	address := fmt.Sprintf("127.0.0.1:%d", port)
+
+	log.Printf("Invoking gRPC method: %s/%s on %s (port %d)", req.Service, req.Method, req.Process, port)
+
+	// Invoke gRPC method using grpcurl
+	result, err := h.invokeWithGrpcurl(address, req.Service, req.Method, req.Data)
+	if err != nil {
+		return &InvokeResponse{
+			Success: false,
+			Error:   fmt.Sprintf("Failed to invoke method: %v", err),
+		}, nil
+	}
+
+	return &InvokeResponse{
+		Success: true,
+		Data:    result,
+	}, nil
+}
