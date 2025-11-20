@@ -331,10 +331,16 @@ func (m *Manager) StartProcessWithOptions(processName string, allowExceedMax boo
 	cmd.Stdout = os.Stdout  // Forward stdout to main process stdout
 	cmd.Stderr = &stderrBuf // Capture stderr for error logging
 
-	// Load environment variables
+	// Load environment variables from .env file (secrets from Cloudflare)
 	envVars, err := m.secretManager.LoadEnvFile(processName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load env file: %w", err)
+	}
+
+	// Merge with config.yaml env section (CSV_BASE_PATH, etc.)
+	// Config env values override .env file values
+	for k, v := range managedProc.Config.Env {
+		envVars[k] = v
 	}
 
 	// DEBUG: Log environment variables being loaded
@@ -619,6 +625,13 @@ func (m *Manager) StopProcessesByBinaryName(repository string, excludePID int, g
 	if err != nil {
 		// If no processes found, PowerShell returns error - this is okay
 		log.Printf("[Process Manager] No processes found matching pattern %s", binaryPattern)
+		return 0, nil
+	}
+
+	// Check if output is empty (no processes found)
+	outputStr := strings.TrimSpace(string(output))
+	if outputStr == "" || outputStr == "null" {
+		log.Printf("[Process Manager] No processes found (empty output)")
 		return 0, nil
 	}
 

@@ -10,6 +10,12 @@ import (
 	"sync"
 )
 
+// ProcessPIDInfo stores PID and process name
+type ProcessPIDInfo struct {
+	PID  int
+	Name string
+}
+
 // PIDTracker tracks process IDs in a file for cleanup
 type PIDTracker struct {
 	filePath string
@@ -45,13 +51,13 @@ func (pt *PIDTracker) CleanupOrphans() error {
 	log.Printf("Found %d orphaned processes to cleanup", len(pids))
 
 	// Try to kill each process
-	remainingPIDs := []int{}
-	for _, pid := range pids {
-		if err := killProcessByPID(pid); err != nil {
-			log.Printf("Failed to kill orphaned PID %d: %v (will retry next time)", pid, err)
-			remainingPIDs = append(remainingPIDs, pid)
+	remainingPIDs := []ProcessPIDInfo{}
+	for _, pidInfo := range pids {
+		if err := killProcessByPID(pidInfo.PID); err != nil {
+			log.Printf("Failed to kill orphaned PID %d (%s): %v (will retry next time)", pidInfo.PID, pidInfo.Name, err)
+			remainingPIDs = append(remainingPIDs, pidInfo)
 		} else {
-			log.Printf("Successfully killed orphaned PID %d", pid)
+			log.Printf("Successfully killed orphaned PID %d (%s)", pidInfo.PID, pidInfo.Name)
 		}
 	}
 
@@ -59,7 +65,7 @@ func (pt *PIDTracker) CleanupOrphans() error {
 	return pt.writePIDs(remainingPIDs)
 }
 
-// Add adds a PID to the tracking file
+// Add adds a PID to the tracking file with process name
 func (pt *PIDTracker) Add(pid int) error {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
@@ -70,8 +76,11 @@ func (pt *PIDTracker) Add(pid int) error {
 		return fmt.Errorf("failed to read PID file: %w", err)
 	}
 
-	// Add new PID
-	pids = append(pids, pid)
+	// Get process name
+	processName := getProcessName(pid)
+
+	// Add new PID with name
+	pids = append(pids, ProcessPIDInfo{PID: pid, Name: processName})
 
 	// Write back
 	return pt.writePIDs(pids)
@@ -92,9 +101,9 @@ func (pt *PIDTracker) Remove(pid int) error {
 	}
 
 	// Remove the PID
-	newPIDs := []int{}
+	newPIDs := []ProcessPIDInfo{}
 	for _, p := range pids {
-		if p != pid {
+		if p.PID != pid {
 			newPIDs = append(newPIDs, p)
 		}
 	}
@@ -104,14 +113,14 @@ func (pt *PIDTracker) Remove(pid int) error {
 }
 
 // readPIDs reads all PIDs from the tracking file
-func (pt *PIDTracker) readPIDs() ([]int, error) {
+func (pt *PIDTracker) readPIDs() ([]ProcessPIDInfo, error) {
 	file, err := os.Open(pt.filePath)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	var pids []int
+	var pids []ProcessPIDInfo
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -119,13 +128,24 @@ func (pt *PIDTracker) readPIDs() ([]int, error) {
 			continue
 		}
 
-		pid, err := strconv.Atoi(line)
+		// Parse "PID:ProcessName" format
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) < 1 {
+			continue
+		}
+
+		pid, err := strconv.Atoi(parts[0])
 		if err != nil {
 			log.Printf("Invalid PID in tracking file: %s", line)
 			continue
 		}
 
-		pids = append(pids, pid)
+		processName := "unknown"
+		if len(parts) == 2 {
+			processName = parts[1]
+		}
+
+		pids = append(pids, ProcessPIDInfo{PID: pid, Name: processName})
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -136,7 +156,7 @@ func (pt *PIDTracker) readPIDs() ([]int, error) {
 }
 
 // writePIDs writes PIDs to the tracking file (overwrites)
-func (pt *PIDTracker) writePIDs(pids []int) error {
+func (pt *PIDTracker) writePIDs(pids []ProcessPIDInfo) error {
 	// If no PIDs, remove the file
 	if len(pids) == 0 {
 		if err := os.Remove(pt.filePath); err != nil && !os.IsNotExist(err) {
@@ -152,8 +172,8 @@ func (pt *PIDTracker) writePIDs(pids []int) error {
 	}
 	defer file.Close()
 
-	for _, pid := range pids {
-		if _, err := fmt.Fprintf(file, "%d\n", pid); err != nil {
+	for _, pidInfo := range pids {
+		if _, err := fmt.Fprintf(file, "%d:%s\n", pidInfo.PID, pidInfo.Name); err != nil {
 			return fmt.Errorf("failed to write PID to file: %w", err)
 		}
 	}

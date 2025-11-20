@@ -197,7 +197,7 @@ func (m *Manager) performUpdate(processName, targetVersion string, force bool) {
 		m.setUpdateStatus(processName, status)
 		return
 	}
-	log.Printf("[Update] New instance started for %s: ID=%s", processName, newInstance.ID)
+	log.Printf("[Update] New instance started for %s: ID=%s, PID=%d", processName, newInstance.ID, newInstance.PID)
 
 	// Wait for new instance to be healthy
 	log.Printf("[Update] Waiting 5 seconds for %s new instance to be healthy...", processName)

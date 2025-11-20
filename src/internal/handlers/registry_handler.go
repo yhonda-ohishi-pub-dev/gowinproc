@@ -141,12 +141,11 @@ func (h *RegistryHandler) GetRegistryData() RegistryResponse {
 		}
 
 		// Get gRPC services and message schemas from reflection (with caching)
-		// Skip reflection for db_service and desktop_server processes
+		// Skip reflection for db_service processes
 		var services []ServiceDetail
 		var messages map[string]MessageDetail
 		isDBService := len(procName) >= 10 && procName[:10] == "db_service"
-		isDesktopServer := procName == "desktop_server"
-		if runningCount > 0 && len(ports) > 0 && !isDBService && !isDesktopServer {
+		if runningCount > 0 && len(ports) > 0 && !isDBService {
 			cachedInfo := h.getServicesWithCache(procName, ports[0])
 			if cachedInfo != nil {
 				services = cachedInfo.Services
