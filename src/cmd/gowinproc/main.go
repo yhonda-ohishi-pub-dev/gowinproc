@@ -40,16 +40,22 @@ import (
 )
 
 var (
-	configPath  = flag.String("config", "config.yaml", "Path to configuration file")
-	certsDir    = flag.String("certs", "certs", "Directory for certificates")
-	keysDir     = flag.String("keys", "keys", "Directory for private keys")
-	dataDir     = flag.String("data", "data", "Directory for data files (.env)")
-	binariesDir = flag.String("binaries", "binaries", "Directory for binary versions")
-	githubToken = flag.String("github-token", "", "GitHub personal access token (or set GITHUB_TOKEN env var)")
+	configPath   = flag.String("config", "config.yaml", "Path to configuration file")
+	certsDir     = flag.String("certs", "certs", "Directory for certificates")
+	keysDir      = flag.String("keys", "keys", "Directory for private keys")
+	dataDir      = flag.String("data", "data", "Directory for data files (.env)")
+	binariesDir  = flag.String("binaries", "binaries", "Directory for binary versions")
+	githubToken  = flag.String("github-token", "", "GitHub personal access token (or set GITHUB_TOKEN env var)")
+	startupDelay = flag.Int("startup-delay", 0, "Delay in milliseconds before starting (for restart)")
 )
 
 func main() {
 	flag.Parse()
+
+	// Wait for startup delay if specified (for restart)
+	if *startupDelay > 0 {
+		time.Sleep(time.Duration(*startupDelay) * time.Millisecond)
+	}
 
 	// Setup log file
 	logFile, err := os.OpenFile("gowinproc.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
@@ -85,10 +91,24 @@ func main() {
 			}
 			// Remove old lock file
 			os.Remove(lockFilePath)
-			// Try to create lock file again
-			lockFile, err = os.OpenFile(lockFilePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0666)
+			// Wait a moment for file system to release the lock
+			time.Sleep(100 * time.Millisecond)
+
+			// Retry creating lock file with backoff
+			maxRetries := 5
+			for i := 0; i < maxRetries; i++ {
+				lockFile, err = os.OpenFile(lockFilePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0666)
+				if err == nil {
+					break
+				}
+				if i < maxRetries-1 {
+					log.Printf("Retry %d/%d: Waiting for lock file to be released...", i+1, maxRetries)
+					time.Sleep(time.Duration(100*(i+1)) * time.Millisecond)
+					os.Remove(lockFilePath) // Try removing again
+				}
+			}
 			if err != nil {
-				log.Fatalf("Failed to create lock file after cleanup: %v", err)
+				log.Fatalf("Failed to create lock file after cleanup (tried %d times): %v", maxRetries, err)
 			}
 		} else {
 			log.Fatalf("Failed to create lock file: %v", err)
@@ -107,8 +127,20 @@ func main() {
 		log.Printf("Warning: Failed to cleanup existing processes: %v", err)
 	}
 
+	// Auto-select config file if not explicitly specified
+	finalConfigPath := *configPath
+	if *configPath == "config.yaml" { // Default value, auto-select
+		selectedConfig, err := selectFirstNonExampleConfig()
+		if err != nil {
+			log.Printf("Warning: Failed to auto-select config: %v, using default: %s", err, *configPath)
+		} else if selectedConfig != "" {
+			finalConfigPath = selectedConfig
+			log.Printf("Auto-selected config file: %s", finalConfigPath)
+		}
+	}
+
 	// Load configuration
-	cfg, err := config.LoadConfig(*configPath)
+	cfg, err := config.LoadConfig(finalConfigPath)
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
@@ -620,4 +652,36 @@ func cleanupExistingProcesses() error {
 	time.Sleep(1 * time.Second)
 
 	return nil
+}
+
+// selectFirstNonExampleConfig finds the first YAML config file that doesn't contain "example" in its name
+func selectFirstNonExampleConfig() (string, error) {
+	// Get current working directory
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		return "", fmt.Errorf("failed to read directory: %w", err)
+	}
+
+	// Find first YAML file that doesn't contain "example"
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		// Check if it's a YAML file
+		if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
+			continue
+		}
+
+		// Skip files containing "example" (case insensitive)
+		if strings.Contains(strings.ToLower(name), "example") {
+			continue
+		}
+
+		// Found a valid config file
+		return name, nil
+	}
+
+	return "", fmt.Errorf("no non-example config file found")
 }

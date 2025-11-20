@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -108,6 +109,7 @@ func (m *Manager) onReady() {
 
 	systray.AddSeparator()
 
+	mRestart := systray.AddMenuItem("Restart", "Restart gowinproc")
 	mQuit := systray.AddMenuItem("Quit", "Stop the server and quit")
 
 	// Handle menu clicks
@@ -125,6 +127,9 @@ func (m *Manager) onReady() {
 						m.copyToClipboard(tunnelURL)
 					}
 				}
+			case <-mRestart.ClickedCh:
+				log.Println("Restart menu clicked")
+				m.restart()
 			case <-mQuit.ClickedCh:
 				log.Println("Quit menu clicked")
 				if m.onQuit != nil {
@@ -201,6 +206,53 @@ func (m *Manager) copyToClipboard(text string) {
 		return
 	}
 	log.Printf("[SysTray] Copied to clipboard: %s", text)
+}
+
+// restart restarts the gowinproc process
+func (m *Manager) restart() {
+	log.Println("[SysTray] Restarting gowinproc...")
+
+	// Get current executable path
+	exePath, err := os.Executable()
+	if err != nil {
+		log.Printf("Failed to get executable path: %v", err)
+		return
+	}
+
+	// Get current working directory
+	workDir, err := os.Getwd()
+	if err != nil {
+		log.Printf("Failed to get working directory: %v", err)
+		return
+	}
+
+	// Prepare new instance command with startup delay
+	// New instance will wait 2 seconds before trying to acquire lock file
+	// Use cmd /c start to open a new console window (if .exe is console mode)
+	var cmd *exec.Cmd
+	if strings.HasSuffix(exePath, "gowinproc.exe") {
+		// Console mode - start in new window
+		cmd = exec.Command("cmd", "/c", "start", "gowinproc", exePath, "-startup-delay", "2000")
+	} else {
+		// GUI mode - start detached
+		cmd = exec.Command(exePath, "-startup-delay", "2000")
+	}
+	cmd.Dir = workDir
+	cmd.Env = os.Environ()
+
+	// Start new instance
+	if err := cmd.Start(); err != nil {
+		log.Printf("Failed to start new instance: %v", err)
+		return
+	}
+
+	log.Printf("[SysTray] New instance command executed with 2s startup delay, shutting down current instance...")
+
+	// Trigger graceful shutdown of current instance
+	if m.onQuit != nil {
+		m.onQuit()
+	}
+	systray.Quit()
 }
 
 // getFallbackIcon returns a proper ICO format icon for Windows system tray
